@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.25 2001/11/11 14:53:49 cvs Exp $
+# $Id: GPG.pm,v 1.26 2001/11/12 22:11:01 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,7 +20,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.25 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.26 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
@@ -86,10 +86,10 @@ sub verify {
   do { $tmpnam = tmpnam() } until sysopen(FH, $tmpnam, O_RDWR|O_CREAT|O_EXCL);
   do { $tmpnam2 = tmpnam() } until sysopen(FH2, $tmpnam2, O_RDWR|O_CREAT|O_EXCL);
 
-  my $message = ref($_[0]) ? join '', @{$_[0]} : $_[0];
-  $message .= "\n" unless $message =~ /\n$/s;
+  my $ciphertext = ref($_[0]) ? join '', @{$_[0]} : $_[0];
+  $ciphertext .= "\n" unless $ciphertext =~ /\n$/s;
 
-  print FH $message; close FH;
+  print FH $ciphertext; close FH;
   if ($_[1]) {
     my $realmessage = join '', @{$_[1]};
     do { $tmpnam3 = tmpnam() } until sysopen(FH3, $tmpnam3, O_RDWR|O_CREAT|O_EXCL);
@@ -115,14 +115,14 @@ sub verify {
   $info =~ s/\r//sg;
   my $trusted = ($info !~ /WARNING: This key is not certified/s);
   my $unknown = ($info =~ /Can't check signature: public key not found/s);
-  $message = join ('',<FH2>); close FH2; unlink ($tmpnam2);
-  return ($message) 
+  my $plaintext = join ('',<FH2>) || ''; close FH2; unlink ($tmpnam2);
+  return ($plaintext) 
     unless $info =~ /.*Signature\ made\ ((?:\S+\s+){6})using\ \S+\ key\ ID\ (\S+)
 	             \s*gpg:\ (Good|BAD)\ signature\ from/sx;;
   my $signature = {'Validity' => $3, 'KeyID' => $2, 'Time' => $1, 'Trusted' => $trusted};
   $signature->{Time} =~ s/\S+\s*$//; $signature->{Time} = str2time ($signature->{Time}, $1); 
   bless $signature, 'Crypt::GPG::Signature';
-  return ($message, $signature);
+  return ($plaintext, $signature);
 }
 
 sub msginfo {
@@ -169,14 +169,14 @@ sub encrypt {
     if ($pos==2) {
       sleep ($self->{DELAY});
       if ($self->{ENCRYPTSAFE}) {
-	print $expect "n\n"; $expect->expect (undef); return undef;
+	print $expect "n\n"; $expect->expect (undef); return;
       }
       else {
 	print $expect "y\n";
       }	
     }
     elsif ($pos==3) {
-      unlink $tmpnam, return undef;
+      unlink $tmpnam, return;
     }
     else {
       $info = $matched;
@@ -477,8 +477,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.25 $
- $Date: 2001/11/11 14:53:49 $
+ $Revision: 1.26 $
+ $Date: 2001/11/12 22:11:01 $
 
 =head1 SYNOPSIS
 

@@ -7,17 +7,17 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: gpg.t,v 1.5 2001/11/11 14:50:16 cvs Exp $
+# $Id: gpg.t,v 1.6 2001/11/12 22:11:01 cvs Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 52 }
+BEGIN { plan tests => 40 }
 
 my $pgpcompat = 0; # Set to 1 to test PGP5 compatibility.
 
-print "Warning: These tests can take quite a while...\n";
+print STDERR "\n\n*** NOTE: Some of these tests can take quite a long time. ***\n";
 
 my ($gpg, $pgp, @x, @y, $pub, $sec);
 my ($gpgdebug, $pgpdebug) = (0,0);
@@ -31,7 +31,8 @@ ok(sub {
 	 $pgp = new Crypt::PGP5;
        };
      }
-     $pgp or print "Crypt::PGP5 not available. Skipping PGP5 compatibility tests.\n";
+     $pgp or print STDERR "*** Skipping PGP5 compatibility tests. ***\n";
+     print STDERR "\n";
    });
 
 ok(sub {
@@ -48,7 +49,7 @@ skip(!$pgp, sub {
        $pgp->debug($pgpdebug);
      }, $pgpdebug);
 
-for my $bits (768, 1024, 2048, 4096) {
+for my $bits (768, 1024, 2048) {
   for my $type ('ELG-E') {
 
     # Generate key pair
