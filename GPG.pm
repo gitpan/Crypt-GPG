@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.27 2001/11/12 22:29:57 cvs Exp $
+# $Id: GPG.pm,v 1.28 2001/12/20 14:19:08 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,7 +20,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.27 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.28 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
@@ -391,7 +391,15 @@ sub keypass {
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("passwd\r"); 
   $expect->expect (undef, 'phrase: '); sleep ($self->{DELAY}); print $expect ("$oldpass\r"); 
   $expect->expect (undef, 'please try again', 'phrase: '); 
-  return undef if $expect->exp_match_number==1; sleep ($self->{DELAY}); print $expect ("$newpass\r"); 
+  if ($expect->exp_match_number == 1) {
+    sleep ($self->{DELAY}); print $expect "$self->{PASSPHRASE}\r";
+    $expect->expect (undef, 'passphrase:');
+    sleep ($self->{DELAY}); print $expect "$self->{PASSPHRASE}\r";    
+    $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("quit\r");
+    $expect->expect (undef);
+    return;
+  }
+  sleep ($self->{DELAY}); print $expect ("$newpass\r"); 
   $expect->expect (undef, 'phrase: '); sleep ($self->{DELAY}); print $expect ("$newpass\r"); 
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("quit\r"); 
   $expect->expect (undef, 'changes?'); sleep ($self->{DELAY}); print $expect ("y\r"); 
@@ -477,8 +485,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.27 $
- $Date: 2001/11/12 22:29:57 $
+ $Revision: 1.28 $
+ $Date: 2001/12/20 14:19:08 $
 
 =head1 SYNOPSIS
 
