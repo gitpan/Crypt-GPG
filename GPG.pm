@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.23 2001/11/10 20:36:31 cvs Exp $
+# $Id: GPG.pm,v 1.25 2001/11/11 14:53:49 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,10 +20,11 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.23 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.25 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
+	  FORCEDOPTS     =>   '--no-secmem-warning',
 	  GPGOPTS        =>   '--lock-multiple --compress-algo 1 --cipher-algo cast5 --force-v3-sigs',
 	  VERSION        =>   "Version: Crypt::GPG v$VERSION\n",
 	  DELAY          =>   0,
@@ -56,7 +57,7 @@ sub sign {
   do { $tmpnam = tmpnam() } until sysopen(FH, $tmpnam, O_RDWR|O_CREAT|O_EXCL);
   my $message = join ('', @_); $message .= "\n" unless $message =~ /\n$/s;
   print FH $message; close FH; 
-  my @opts = split (/\s+/, $self->{GPGOPTS});
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
   my $expect = Expect->spawn ($self->{GPGBIN}, @opts, '-o-', '--sign', $armor, $detach, 
 			      '--default-key', $self->{SECRETKEY}, $tmpnam);
   $expect->log_stdout($self->{DEBUG});
@@ -95,7 +96,8 @@ sub verify {
     $realmessage =~ s/\n/\r\n/sg;
     print FH3 $realmessage; close FH3;
   }
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --yes --decrypt -o $tmpnam2 $tmpnam"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  my $expect = Expect->spawn ("$self->{GPGBIN} $opts --yes --decrypt -o $tmpnam2 $tmpnam"); 
   $expect->log_stdout($self->{DEBUG});
   $expect->expect (undef, '-re', '^gpg:', '-re', 'passphrase:\s*', '-re', 'data file:');
   if ($expect->exp_match_number==3) {
@@ -127,7 +129,8 @@ sub msginfo {
   my $self = shift; my @return = (); my $tmpnam; 
   do { $tmpnam = tmpnam() } until sysopen(FH, $tmpnam, O_RDWR|O_CREAT|O_EXCL);
   print FH join '',@{$_[0]}; close FH; 
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --batch $tmpnam"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  my $expect = Expect->spawn ("$self->{GPGBIN} $opts --batch $tmpnam"); 
   $expect->log_stdout($self->{DEBUG});
   sleep ($self->{DELAY}); $expect->expect (undef); my $info = $expect->exp_before();
   $info =~ s/key, ID (.{8})/{push @return, $1}/sge; unlink $tmpnam;
@@ -154,7 +157,7 @@ sub encrypt {
   $message = join ('', @$message) if ref($message) eq 'ARRAY'; 
   print FH $message; close FH;
 
-  my @opts = split (/\s+/, $self->{GPGOPTS});
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
   push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
   my $expect = Expect->spawn("$self->{GPGBIN} @opts -o- --encrypt $sign $armor @rcpts $tmpnam");
       
@@ -197,7 +200,7 @@ sub addkey {
 
   my @pret = ('--options', '/dev/null', '--no-default-keyring', 
 	      '--keyring', $tmpnam2, '--secret-keyring', $tmpnam3);
-  my @opts = split (/\s+/, $self->{GPGOPTS});
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
   my @listopts = qw(--fingerprint --fingerprint --with-colons);
 	      
   my @info = backtick($self->{GPGBIN}, @opts, @pret, '-v', '--import', $tmpnam);
@@ -217,8 +220,8 @@ sub export {
   my $self = shift; my $key = shift; my $armor; $armor = "-a" if $self->{ARMOR}; 
   my $id = $key->{ID}; return unless $id =~ /$self->{VKEYID}/;
   my $secret = $key->{Type} eq 'sec' ? '-secret-keys' : '';
-  my @info = backtick($self->{GPGBIN}, split (/\s+/, $self->{GPGOPTS}), 
-		      "--export$secret", $armor, $id);
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
+  my @info = backtick($self->{GPGBIN}, @opts, "--export$secret", $armor, $id);
   my $info = join '',@info;
   $info =~ s/\r//sg; $info =~ s/^Version:.*\n/$self->{VERSION}/m; 
   $info =~ s/^Comment:.*\n/$self->{COMMENT}/m;
@@ -231,7 +234,8 @@ sub keygen {
     and $keytype =~ /$self->{VKEYTYPE}/ and $name =~ /$self->{VNAME}/ and length ($name) > 4
       and $expire =~ /$self->{VEXPIRE}/ and $email =~ /$self->{VEMAIL}/
         and $pass =~ /$self->{VPASSPHRASE}/;
-  my $bigkey = ($keysize > 1536); my @opts = split (/\s+/, $self->{GPGOPTS});
+  my $bigkey = ($keysize > 1536);   
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
   my $discard = backtick ($self->{GPGBIN}, @opts, '--no-tty', '--gen-random', 0, 1);
   $discard = backtick ($self->{GPGBIN}, @opts, '--no-tty', '--gen-random', 0, 1);
   my $pid = open(GPG, "-|");
@@ -241,7 +245,8 @@ sub keygen {
     return \*GPG;
   }
   else {
-    my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --gen-key"); $expect->log_stdout(0);
+    my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+    my $expect = Expect->spawn ("$self->{GPGBIN} $opts --gen-key"); $expect->log_stdout(0);
     $expect->expect (undef, 'selection?'); sleep ($self->{DELAY}); print $expect ( "1\r"); print ".\n";
     $expect->expect (undef, 'do you want?'); sleep ($self->{DELAY}); print $expect ("$keysize\r"); print ".\n";
     $expect->expect (undef, 'keysize?'), sleep ($self->{DELAY}), print $expect ("y\r"), print ".\n" if $bigkey;
@@ -296,10 +301,10 @@ sub backtick {
 sub keydb {
   my $self = shift; 
   my @ids = map { return unless /$self->{VKEYID}/; $_ } @_;
-  my @keylist = backtick($self->{GPGBIN}, split (/\s+/, $self->{GPGOPTS}), 
-			 '--check-sigs', '--fingerprint', '--fingerprint', '--with-colons', @ids); 
-  my @seclist = backtick($self->{GPGBIN}, split (/\s+/, $self->{GPGOPTS}), '--list-secret-keys',
-			 '--fingerprint', '--fingerprint', '--with-colons', @ids); 
+  my @moreopts = qw(--fingerprint --fingerprint --with-colons);
+  my @opts = (split (/\s+/, $self->{FORCEDOPTS}), split (/\s+/, $self->{GPGOPTS}));
+  my @keylist = backtick($self->{GPGBIN}, @opts, '--check-sigs', @moreopts, @ids); 
+  my @seclist = backtick($self->{GPGBIN}, @opts, '--list-secret-keys', @moreopts, @ids); 
   @keylist = grep { /^...:.*:$/ } (@keylist, @seclist);
   $self->parsekeys (@keylist);
 }
@@ -380,7 +385,8 @@ sub keypass {
   my $self = shift; my ($key, $oldpass, $newpass) = @_;
   return unless $oldpass =~ /$self->{VPASSPHRASE}/ and $newpass =~ /$self->{VPASSPHRASE}/
     and $key->{Type} eq 'sec';
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --edit-key $key->{ID}"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  my $expect = Expect->spawn ("$self->{GPGBIN} $opts --edit-key $key->{ID}"); 
   $expect->log_stdout($self->{DEBUG});
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("passwd\r"); 
   $expect->expect (undef, 'phrase: '); sleep ($self->{DELAY}); print $expect ("$oldpass\r"); 
@@ -396,8 +402,8 @@ sub keypass {
 sub keytrust {
   my $self = shift; my ($key, $trustlevel) = @_;
   return unless $trustlevel =~ /$self->{VTRUSTLEVEL}/;
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --edit-key $key->{ID}"); 
-  print "$self->{GPGBIN} $self->{GPGOPTS} --edit-key $key->{ID}\n";
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  my $expect = Expect->spawn ("$self->{GPGBIN} $opts --edit-key $key->{ID}"); 
   $expect->log_stdout($self->{DEBUG});
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("trust\r"); 
   $expect->expect (undef, 'decision? '); sleep ($self->{DELAY}); print $expect ("$trustlevel\r"); 
@@ -410,10 +416,8 @@ sub delkey {
   my $self = shift; my $key = shift; 
   return unless $key->{ID} =~ /$self->{VKEYID}/;
   my $del = $key->{Type} eq 'sec'?'--delete-secret-and-public-key':'--delete-key';
-#  my @info = backtick($self->{GPGBIN}, split(/\s+/, $self->{GPGOPTS}), $del, $key->{ID}); 
-#  print @info; return;
-
-  return unless my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} $del $key->{ID}"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  return unless my $expect = Expect->spawn ("$self->{GPGBIN} $opts $del $key->{ID}"); 
   $expect->log_stdout($self->{DEBUG}); $expect->expect (undef, 'delete it first.', 'keyring?'); 
   return undef if ($expect->exp_match_number==1); 
   sleep ($self->{DELAY}); print $expect ("y\r"); 
@@ -428,7 +432,8 @@ sub delkey {
 sub disablekey {
   my $self = shift; my $key = shift;
   return unless $key->{ID} =~ /$self->{VKEYID}/;
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --edit-key $key->{ID}"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  return unless my $expect = Expect->spawn ("$self->{GPGBIN} $opts --edit-key $key->{ID}"); 
   $expect->log_stdout($self->{DEBUG}); $expect->expect (undef, 'been disabled', 'Command>'); 
   return undef if $expect->exp_match_number==1; sleep ($self->{DELAY}); print $expect ("disable\r"); 
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("quit\r"); 
@@ -440,7 +445,8 @@ sub disablekey {
 sub enablekey {
   my $self = shift; my $key = shift;
   return unless $key->{ID} =~ /$self->{VKEYID}/;
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} --edit-key $key->{ID}"); 
+  my $opts = "$self->{FORCEDOPTS} $self->{GPGOPTS}";
+  return unless my $expect = Expect->spawn ("$self->{GPGBIN} $opts --edit-key $key->{ID}"); 
   $expect->log_stdout($self->{DEBUG}); $expect->expect (undef, 'been disabled', 'Command>'); 
   return undef unless $expect->exp_match_number==1; sleep ($self->{DELAY}); print $expect ("enable\r"); 
   $expect->expect (undef, 'Command>'); sleep ($self->{DELAY}); print $expect ("quit\r"); 
@@ -471,8 +477,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.23 $
- $Date: 2001/11/10 20:36:31 $
+ $Revision: 1.25 $
+ $Date: 2001/11/11 14:53:49 $
 
 =head1 SYNOPSIS
 
