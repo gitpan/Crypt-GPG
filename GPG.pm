@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.21 2001/11/10 09:33:34 cvs Exp $
+# $Id: GPG.pm,v 1.22 2001/11/10 15:27:56 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,7 +20,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.21 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.22 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
@@ -77,10 +77,7 @@ sub sign {
   return $info;
 }
 
-sub decrypt {
-  my $self = shift;
-  $self->verify(@_);
-}
+sub decrypt { shift->verify(@_); }
 
 sub verify {
   my $self = shift; my $tmpnam; my $tmpnam2; my $tmpnam3;
@@ -474,13 +471,13 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.21 $
- $Date: 2001/11/10 09:33:34 $
+ $Revision: 1.22 $
+ $Date: 2001/11/10 15:27:56 $
 
 =head1 SYNOPSIS
 
   use Crypt::GPG;
-  $gpg = new Crypt::GPG;
+  my $gpg = new Crypt::GPG;
 
   $gpg->gpgbin('/usr/bin/gpg');      # The GnuPG executable.
   $gpg->secretkey('0x2B59D29E');     # Set ID of default secret key.
@@ -488,21 +485,24 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
   # Sign a message:
 
-  $sign = $gpg->sign('testing again');
+  my $sign = $gpg->sign('testing again');
 
   # Encrypt a message:
 
-  $encrypted = $gpg->encrypt ('top secret', 'hash@netropolis.org');
+  my @encrypted = $gpg->encrypt ('top secret', 'hash@netropolis.org');
 
-  # Decrypt / verify signature on a message, get message info:
+  # Get message info:
 
-  ($sign, $plaintext) = $gpg->decrypt($encrypted);
-  @recipients = $gpg->msginfo($encrypted);
+  my @recipients = $gpg->msginfo($encrypted);
+
+  # Decrypt / verify signature on a message, 
+
+  my ($plaintext, $signature) = $gpg->verify($encrypted);
 
   # Key generation:
 
   $status = $gpg->keygen 
-    ('Test', 'test@foo.com', 'DH', 2048, 0, 'test passphrase');
+    ('Test', 'test@foo.com', 'ELG-E', 2048, 0, 'test passphrase');
   print while (<$status>); close $status;
 
   # Key database manipulation:
@@ -511,8 +511,6 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
   @keys = $gpg->keydb(@ids);
 
   # Key manipulation:
-  # (The methods below will likely be encapsulated into the
-  # Crypt::GPG::Key class in a future release, bewarned!)
 
   $key = $keys[0];
  
@@ -539,7 +537,7 @@ module which will interface with GnuPG as well as all versions of PGP.
 
 =over 2
 
-=item B<new ()>
+=item B<new()>
 
 Creates and returns a new Crypt::GPG object.
 
@@ -549,19 +547,19 @@ Creates and returns a new Crypt::GPG object.
 
 =over 2
 
-=item B<gpgbin ()>
+=item B<gpgbin($path)>
 
 Sets the B<GPGBIN> instance variable which gives the path to the GnuPG
 binary.
 
-=item B<gpgopts ()>
+=item B<gpgopts($opts)>
 
 Sets the B<GPGOPTS> instance variable which may be used to pass
 additional options to the GnuPG binary. For proper functioning of this
 module, it is advisable to always include '--lock-multiple' in the
 GPGOPTS string.
 
-=item B<delay ()>
+=item B<delay($seconds)>
 
 Sets the B<DELAY> instance variable. This is the time (in seconds, or
 fractions of seconds) to wait after receiving a prompt from the GnuPG
@@ -569,62 +567,63 @@ executable before starting to respond to it. I've noticed on some
 machines that the executable hangs if it gets input too fast. The
 delay is off by default.
 
-=item B<secretkey ()>
+=item B<secretkey($keyid)>
 
 Sets the B<SECRETKEY> instance variable which may be a KeyID or a
 username. This is the ID of the default key to use for signing.
 
-=item B<passphrase ()>
+=item B<passphrase($passphrase)>
 
 Sets the B<PASSPHRASE> instance variable, required for signing and
 decryption.
 
-=item B<text ()>
+=item B<text($boolean)>
 
-Sets the B<TEXT> instance variable. If set to 1, GnuPG will use
+Sets the B<TEXT> instance variable. If set true, GnuPG will use
 network-compatible line endings for proper cross-platform
 compatibility and the plaintext will gain a newline at the end, if it
 does not already have one.
 
-=item B<signfirst ()>
+=item B<signfirst($boolean)>
 
 Sets the B<SIGNFIRST> instance variable. If set to 1, plaintext will
 be signed before encryption. This is the way it should be done,
 generally, unless you have good reason not to do it this way.
 
-=item B<armor ()>
+=item B<armor($boolean)>
 
-Sets the B<ARMOR> instance variable. If set to 0, Crypt::GPG doesn't
-ASCII armor its output. Else, it does. Default is to use
-ascii-armoring. I haven't tested the methods in this module without
-ASCII armoring yet.
+Sets the B<ARMOR> instance variable, controlling the ASCII armoring of
+output. The default is to use ascii-armoring. The module has not been
+tested with this option turned off, and most likely will not work if
+you switch this off.
 
-=item B<detach ()>
+=item B<detach($boolean)>
 
-Sets the B<DETACH> instance variable. If set to 1, the sign method
+Sets the B<DETACH> instance variable. If set true, the sign method
 will produce detached signature certificates, else it won't. The
 default is to produce detached signatures.
 
-=item B<encryptsafe ()>
+=item B<encryptsafe($boolean)>
 
-Sets the B<ENCRYPTSAFE> instance variable. If set to 1, encryption
+Sets the B<ENCRYPTSAFE> instance variable. If set true, encryption
 will fail if trying to encrypt to a key which is not trusted. This is
-the default. Switch to 0 if you want to encrypt to untrusted keys.
+the default. Turn this off if you want to encrypt to untrusted keys.
 
-=item B<version ()>
+=item B<version($versionstring)>
 
 Sets the B<VERSION> instance variable which can be used to change the
 Version: string on the GnuPG output to whatever you like.
 
-=item B<comment ()>
+=item B<comment($commentstring)>
 
 Sets the B<COMMENT> instance variable which can be used to change the
 Comment: string on the GnuPG output to whatever you like.
 
-=item B<debug ()>
+=item B<debug($boolean)>
 
 Sets the B<DEBUG> instance variable which causes the raw output of
-Crypt::GPG's interaction with the GnuPG binary to be dumped to STDOUT.
+Crypt::GPG's interaction with the GnuPG binary to be dumped to
+STDOUT. By default, debugging is off.
 
 =back
 
@@ -632,25 +631,29 @@ Crypt::GPG's interaction with the GnuPG binary to be dumped to STDOUT.
 
 =over 2
 
-=item B<sign (@message)>
+=item B<sign(@message)>
 
-Signs B<@message> with the secret key specified with B<secretkey ()>
+Signs B<@message> with the secret key specified with B<secretkey()>
 and returns the result as a string.
 
-=item B<decrypt ( \@message, [ \@signature ])>
+=item B<verify(\@message, [\@signature])>
+
+This is just an alias for B<verify()>
+
+=item B<verify(\@message, [\@signature])>
 
 Decrypts and/or verifies the message in B<@message>, optionally using
-the detached signature in B<@signature>, and returns the plaintext
-message as a string, along with a Crypt::GPG::Signature object
-corresponding to the signature on the message, if the message was
-signed.
+the detached signature in B<@signature>, and returns a list whose
+first element is plaintext message as a string. If the message was
+signed, a Crypt::GPG::Signature object is returned as the second
+element of the list.
 
-=item B<msginfo (@ciphertext)>
+=item B<msginfo(@ciphertext)>
 
 Returns a list of the recipient key IDs that B<@ciphertext> is
 encrypted to.
 
-=item B<encrypt ($plaintext, $keylist [, -sign] [, -text] )>
+=item B<encrypt($plaintext, $keylist, [-sign] )>
 
 Encrypts B<$plaintext> with the public keys of the recipients listed
 in B<$keylist> and returns the result in a string, or B<undef> if
@@ -661,62 +664,57 @@ Either $plaintext or $keylist may be specified as either an arrayref
 or a simple scalar.  If $plaintext is a an arrayref, it will be
 join()ed without newlines. 
 
-If the -sign option is provided, the message will be signed then 
-encrypted. 
+If the -sign option is provided, the message will be signed before
+encryption. 
 
-If the -text option is specified, GnuPG will use network-compatible
-line endings for proper cross-platform compatibility.  In this case,
-the plaintext will gain a newline at the end, if it does not already
-have one.
-
-=item B<addkey (\@key, $pretend)>
+=item B<addkey(\@key, $pretend)>
 
 Adds the keys given in B<@key> to the user's key ring and returns a
 list of Crypt::GPG::Key objects corresponding to the keys that were
 added. If B<$pretend> is true, it pretends to add the key and creates
 the key object, but doesn't actually perform the key addition.
 
-=item B<export ($key)>
+=item B<export($key)>
 
 Exports the key specified by the Crypt::GPG::Key object B<$key> and
 returns the result as a string.
 
-=item B<keygen ($name, $email, $keytype, $keysize, $expire, $passphrase)>
+=item B<keygen($name, $email, $keytype, $keysize, $expire, $passphrase)>
 
 Creates a new keypair with the parameters specified. The only
-supported B<$keytype> is 'ELG-E'. B<$keysize> can be any of 768, 1024,
-2048, 3072 or 4096. Returns undef if there was an error, otherwise
-returns a filehandle that reports the progress of the key generation
-process similar to the way GnuPG does. The key generation is not
-complete till you read an EOF from the returned filehandle.
+supported B<$keytype> currently is 'ELG-E'. B<$keysize> can be any of
+768, 1024, 2048, 3072 or 4096. Returns undef if there was an error,
+otherwise returns a filehandle that reports the progress of the key
+generation process similar to the way GnuPG does. The key generation
+is not complete till you read an EOF from the returned filehandle.
 
-=item B<keydb (@keyids)>
+=item B<keydb(@keyids)>
 
 Returns an array of Crypt::GPG::Key objects corresponding to the Key
 IDs listed in B<@keyids>. This method used to be called B<keyinfo> and
 that is still an alias to this method.
 
-=item B<parsekeys (@keylist)>
+=item B<parsekeys(@keylist)>
 
 Parses a raw GnuPG formatted key listing in B<@keylist> and returns an
 array of Crypt::GPG::Key objects.
 
-=item B<keypass ($key, $oldpass, $newpass)>
+=item B<keypass($key, $oldpass, $newpass)>
 
 Change the passphrase for a key. Returns true if the passphrase change
 succeeded, false if not, or undef if there was an error.
 
-=item B<delkey ($keyid)>
+=item B<delkey($keyid)>
 
 Deletes the key specified by the Crypt::GPG::Key object B<$key> from
 the user's key ring. Returns undef if there was an error, or 1 if the
 key was successfully deleted.
 
-=item B<disablekey ($keyid)>
+=item B<disablekey($keyid)>
 
 Disables the key specified by the Crypt::GPG::Key object B<$key>.
 
-=item B<enablekey ($keyid)>
+=item B<enablekey($keyid)>
 
 Enables the key specified by the Crypt::GPG::Key object B<$key>.
 
@@ -736,9 +734,9 @@ Some key manipulation functions are missing.
 
 =item * 
 
-The method call interface is subject to change in future versions,
-specifically, key manipulation methods will be encapsulated into the
-Crypt::GPG::Key class in a future version.
+The method call interface is subject to change in future versions.
+Key manipulation methods will be encapsulated into the Crypt::GPG::Key
+class.
 
 =item * 
 
@@ -767,10 +765,6 @@ team.
 
 This code is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
-
-=head1 DISCLAIMER
-
-This is free software. If it breaks, you own both parts.
 
 =cut
 

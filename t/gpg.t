@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: gpg.t,v 1.2 2001/11/10 09:32:38 cvs Exp $
+# $Id: gpg.t,v 1.4 2001/11/10 15:50:15 cvs Exp $
 
 use strict;
 use Test;
@@ -29,8 +29,10 @@ ok(sub {
    });
 
 ok(sub {
-     eval { use Crypt::PGP5;
-	    $pgp = new Crypt::PGP5 if $pgpcompat;
+     eval { if ($pgpcompat) {
+              use Crypt::PGP5;
+	      $pgp = new Crypt::PGP5;
+	    }
 	    $pgp or print "Warning: Skipping PGP 5 compatibility tests.\n";
 	  };
      return 1;
