@@ -1,9 +1,15 @@
+INSTALL NOTES
+
+    If the tests fail, you may need to generate more random bytes 
+    (one easy way to do that is to run a recursive directory listing 
+    in the background).
+
 NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.1 $
-     $Date: 2002/10/19 16:14:20 $
+     $Revision: 1.49 $
+     $Date: 2005/02/10 09:30:47 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -25,7 +31,7 @@ SYNOPSIS
 
       my @recipients = $gpg->msginfo($encrypted);
 
-      # Decrypt / verify signature on a message, 
+      # Decrypt a message.
 
       my ($plaintext, $signature) = $gpg->verify($encrypted);
 
@@ -51,16 +57,16 @@ SYNOPSIS
       $keystring = $gpg->export($key);
 
 DESCRIPTION
-    The Crypt::GPG module provides near complete access to GnuPG
-    functionality through an object oriented interface. It provides methods
-    for encryption, decryption, signing, signature verification, key
-    generation, key export and import, and most other key management
-    functions.
+    The Crypt::GPG module provides access to the functionality of the GnuPG
+    (www.gnupg.org) encryption tool through an object oriented interface.
 
-    This module works almost identically to its cousin, Crypt::PGP5. The two
-    modules together provide a uniform interface to deal with both PGP and
-    GnuPG. Eventually, these modules will be folded into a single module
-    which will interface with GnuPG as well as all versions of PGP.
+    It provides methods for encryption, decryption, signing, signature
+    verification, key generation, key certification, export and import.
+    Key-server access is on the todo list.
+
+    This release of the module may create compatibility issues with previous
+    versions. If you find any such problems, or any bugs or documentation
+    errors, please do report them to crypt-gpg@neomailbox.com.
 
 CONSTRUCTOR
     new()
@@ -78,11 +84,9 @@ DATA METHODS
       GPGOPTS string.
 
     delay($seconds)
-      Sets the DELAY instance variable. This is the time (in seconds, or
-      fractions of seconds) to wait after receiving a prompt from the GnuPG
-      executable before starting to respond to it. I've noticed on some
-      machines that the executable hangs if it gets input too fast. The
-      delay is off by default.
+      Sets the DELAY instance variable. This is no longer necessary (nor
+      used) in the current version of the module, but remains so existing
+      scripts don't break.
 
     secretkey($keyid)
       Sets the SECRETKEY instance variable which may be a KeyID or a
@@ -234,14 +238,19 @@ Crypt::GPG::Signature
 Crypt::GPG::Key
         Documentation coming soon.
 
+TODO
+    * Key server access.
+
+    * More complete key manipulation interface.
+
+    * Filehandle interface to handle large messages.
+
 BUGS
     * Error checking needs work.
 
     * Some key manipulation functions are missing.
 
-    * The method call interface is subject to change in future versions. Key
-      manipulation methods will be encapsulated into the Crypt::GPG::Key
-      class.
+    * The method call interface is subject to change in future versions.
 
     * The current implementation will probably eat up all your RAM if you
       try to operate on huge messages. In future versions, this will be
@@ -251,10 +260,21 @@ BUGS
     * Methods may break if you don't use ASCII armoring.
 
 CHANGELOG
-      $Log: README,v $
-      Revision 1.1  2002/10/19 16:14:20  cvs
-      Added README
- Revision 1.40 2002/09/23 23:01:53 cvs
+      Revision 1.49 2005/02/10 09:30:47 cvs
+
+       - Overhauled to use IPC::Run instead of Expect.
+
+       - Test suite split up into multiple scripts.
+
+      Revision 1.42 2002/12/11 03:33:19 cvs
+
+       - Fixed bug in certify() when trying to certify revoked a key.
+
+       - Applied dharris\x40drh.net's patch to allow for varying date formats
+         between gpg versions, and fix time parsing and the
+         Crypt::GPG::Signature autoloaded accessor functions.
+
+      Revision 1.40 2002/09/23 23:01:53 cvs
 
        - Fixed a bug in keypass()
 
@@ -316,14 +336,18 @@ CHANGELOG
          and trusted().
 
 AUTHOR
-    Crypt::GPG is Copyright (c) 2000-2001 Ashish Gulhati
-    <hash@netropolis.org>. All Rights Reserved.
+    Crypt::GPG is Copyright (c) 2000-2005 Ashish Gulhati
+    <crypt-gpg@neomailbox.com>. All Rights Reserved.
 
 ACKNOWLEDGEMENTS
-    Thanks to Barkha for inspiration and lots of laughs, and to the GnuPG
-    team.
+    Thanks to Barkha, my sunshine. And to the GnuPG team and everyone who
+    writes free software.
 
 LICENSE
     This code is free software; you can redistribute it and/or modify it
     under the same terms as Perl itself.
+
+BUGS REPORTS, PATCHES AND FEATURE REQUESTS
+
+Are very welcome. Email crypt-gpg@neomailbox.com.    
 

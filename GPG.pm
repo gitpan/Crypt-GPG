@@ -1,39 +1,40 @@
 # -*-cperl-*-
 #
 # Crypt::GPG - An Object Oriented Interface to GnuPG.
-# Copyright (c) 2000-2002 Ashish Gulhati <hash@netropolis.org>
+# Copyright (c) 2000-2005 Ashish Gulhati <crypt-gpg@neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.42 2002/12/11 03:33:19 cvs Exp $
+# $Id: GPG.pm,v 1.49 2005/02/10 09:30:47 cvs Exp $
 
 package Crypt::GPG;
 
 use Carp;
 use Fcntl;
-use Expect;
 use strict;
+use English; 
 use File::Path;
 use Date::Parse;
-use Time::HiRes qw( sleep );
 use File::Temp qw( tempfile tempdir );
+use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
-File::Temp->safe_level( File::Temp::HIGH );
-( $VERSION ) = '$Revision: 1.42 $' =~ /\s+([\d\.]+)/;
+File::Temp->safe_level( File::Temp::STANDARD );
+( $VERSION ) = '$Revision: 1.49 $' =~ /\s+([\d\.]+)/;
 
 sub new {
-  bless { GPGBIN         =>   'gpg',
+  bless { GPGBIN         =>   '/usr/local/bin/gpg',
 	  FORCEDOPTS     =>   '--no-secmem-warning',
 	  GPGOPTS        =>   '--lock-multiple --compress-algo 1 ' .
 	                      '--cipher-algo cast5 --force-v3-sigs',
 	  VERSION        =>   $VERSION,
-	  DELAY          =>   0.1,
+	  DELAY          =>   0,
 	  PASSPHRASE     =>   '',
 	  COMMENT        =>   "Crypt::GPG v$VERSION",
 	  ARMOR          =>   1,
+	  MARGINALS      =>   3,
 	  DETACH         =>   1,
 	  ENCRYPTSAFE    =>   1,
 	  TEXT           =>   1,
@@ -43,14 +44,14 @@ sub new {
 	  TMPDIRS        =>   'dirXXXXXX',
 	  TMPDIR         =>   '/tmp',
 	  TMPSUFFIX      =>   '.dat',
-	  VKEYID         =>   '^.*$',
+	  VKEYID         =>   '^.+$',
 	  VRCPT          =>   '^.*$',
 	  VPASSPHRASE    =>   '^.*$',
 	  VNAME          =>   '^[a-zA-Z][\w\.\s\-\_]+$',
 	  VEXPIRE        =>   '^\d+$',
 	  VKEYSZ         =>   '^\d+$',
 	  VKEYTYPE       =>   '^ELG-E$',
-	  VTRUSTLEVEL    =>   '^[1-4]$',
+	  VTRUSTLEVEL    =>   '^[1-5]$',
 	  VEMAIL         =>   '^[\w\.\-]+\@[\w\.\-]+\.[A-Za-z]{2,3}$'
 	}, shift;
 }
@@ -63,9 +64,9 @@ sub sign {
 
   my $detach    = '-b' if $self->{DETACH}; 
   my $armor     = '-a' if $self->{ARMOR}; 
-  my @extras    = ($detach, $armor);
+  my @extras    = grep { $_ } ($detach, $armor);
 
-  my @secretkey = ('--default-key', $self->{SECRETKEY});
+  my @secretkey = ('--default-key', ref($self->{SECRETKEY})?$self->{SECRETKEY}->{ID}:$self->{SECRETKEY});
 
   my ($tmpfh, $tmpnam) = 
     tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
@@ -73,34 +74,48 @@ sub sign {
 
   my $message = join ('', @_); 
   $message .= "\n" unless $message =~ /\n$/s;
+  $message =~ s/\n/\r\n/sg;
   print $tmpfh $message; close $tmpfh; 
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
-  my $expect = Expect->spawn 
-    ($self->{GPGBIN}, @opts, '-o-', '--sign', @extras, 
-     @secretkey, $tmpnam);
-  $expect->log_stdout($self->{DEBUG});
+  local $SIG{CHLD} = 'IGNORE';
 
-  $expect->expect (undef, '-re', '-----BEGIN', 'passphrase:', 'signing failed');
-  if ($expect->exp_match_number == 2) {
-    $self->doze(); print $expect "$self->{PASSPHRASE}\r";
-    $expect->expect (undef, '-re', '-----BEGIN', 'passphrase:');
-    if ($expect->exp_match_number == 2) {
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";    
-      $expect->expect (undef, 'passphrase:'); $self->doze(); 
-      print $expect "$self->{PASSPHRASE}\r";    
-      $expect->expect (undef);
-      unlink $tmpnam; 
-      return;
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, @secretkey,'--no-tty', '--status-fd', '1', '--command-fd', 
+		  0, '-o-', '--sign', @extras, $tmpnam], \$in, \$out, \$err, timeout( 30 ));
+  my $skip = 1; my $i = 0;
+  local $SIG{CHLD} = 'IGNORE';
+  local $SIG{PIPE} = 'IGNORE';
+  while ($skip) {
+    pump $h until ($out =~ /NEED_PASSPHRASE (.{16}) (.{16}).*\n/g or
+		   $out =~ /GOOD_PASSPHRASE/g);
+    if ($2) {
+      $in .= "$self->{PASSPHRASE}\n";
+      pump $h until $out =~ /(GOOD|BAD)_PASSPHRASE/g;
+      if ($1 eq 'GOOD') {
+	$skip = 0;
+      }
+      else {
+	$skip = 0 if $i++ == 2;
+      }
+    }
+    else {
+      finish $h;
+      last;
     }
   }
-  elsif ($expect->exp_match_number == 3) {
-    unlink $tmpnam; $expect->close;
-    return;
+  finish $h;
+ 
+  my $info;
+  if ($detach) {
+    $out =~ /(-----BEGIN PGP SIGNATURE-----.*-----END PGP SIGNATURE-----)/s;
+    $info = $1;
   }
-  $expect->expect (undef); 
-  my $info = $expect->exp_match() . $expect->exp_before(); 
+  else {
+    $out =~ /(-----BEGIN PGP MESSAGE-----.*-----END PGP MESSAGE-----)/s;
+    $info = $1;
+  }
   unlink $tmpnam;
   return $info;
 }
@@ -111,83 +126,98 @@ sub verify {
   my $self = shift; 
   my ($tmpfh3, $tmpnam3);
 
+  return unless $self->{SECRETKEY} || $_[1];
   return unless $self->{PASSPHRASE} =~ /$self->{VPASSPHRASE}/;
 
-  my ($tmpfh, $tmpnam) = 
-    tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
-	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
-  my ($tmpfh2, $tmpnam2) = 
-    tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
-	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
+  my ($tf, $ts, $td) = ($self->{TMPFILES}, $self->{TMPSUFFIX}, $self->{TMPDIR});
+  my ($tmpfh, $tmpnam) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
+  my ($tmpfh2, $tmpnam2) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
 
   my $ciphertext = ref($_[0]) ? join '', @{$_[0]} : $_[0];
   $ciphertext .= "\n" unless $ciphertext =~ /\n$/s;
   print $tmpfh $ciphertext; close $tmpfh;
 
+  my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
+  push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT} and !$_[1];
+  backtick ($self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS}, '--check-trustdb');
+
+    local $SIG{CHLD} = 'IGNORE';
+    local $SIG{PIPE} = 'IGNORE';
+
+  my $x;
   if ($_[1]) {
     my $signature = ref($_[1]) ? join '', @{$_[1]} : $_[1];
-    ($tmpfh3, $tmpnam3) = 
-      tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
-		SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
+    ($tmpfh3, $tmpnam3) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
     print $tmpfh3 $signature; close $tmpfh3;
+    my $y = "$self->{GPGBIN} @opts --marginals-needed $self->{MARGINALS} --status-fd 1 --command-fd 0 --no-tty --verify $tmpnam $tmpnam3";
+    $x = `$y`;
   }
 
-  my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
-  my $expect = Expect->spawn ($self->{GPGBIN}, @opts, '--yes', 
-			      '--decrypt', '-o', $tmpnam2, $tmpnam);
-  $expect->log_stdout($self->{DEBUG});
+  else {
+    my ($in, $out, $err, $in_q, $out_q, $err_q);
+    my $h = start ([$self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS},
+                    '--status-fd', '1', '--command-fd', 0, '--yes', '--no-tty', 
+		    '--decrypt', '-o', $tmpnam2, $tmpnam], 
+		   \$in, \$out, \$err, timeout( 30 ));
 
-  $expect->expect 
-    (undef, '-re', '^gpg:', '-re', 'passphrase:\s*', 
-     '-re', 'data file:');
-
-  if ($expect->exp_match_number==3) {
-    $self->doze(); print $expect "$tmpnam3\r";
-    $expect->expect 
-      (undef, '-re', 'gpg:', '-re', 'passphrase:\s*');
-  }
-
-  if ($expect->exp_match_number==2) {
-    $self->doze(); print $expect "$self->{PASSPHRASE}\r";
-
-
-    #! Suggested mod (yu\x40math.duke.edu) - change below:
-    $expect->expect 
-      (undef, '-re', 'gpg: encrypted', '-re', 'passphrase:\s*');
-    if ($expect->exp_match_number()==2) {
-      unlink $tmpnam3 if $tmpnam3;
-      close $tmpfh2; close $expect; 
-      unlink ($tmpnam, $tmpnam2);
-      return;
+    my $success = 0;
+    while (1) {
+      pump $h until ($out =~ /NEED_PASSPHRASE (.{16}) (.{16}).*\n/g
+		     or $out =~ /(GOOD_PASSPHRASE)/g
+		     or $out =~ /(D)(E)(C)RYPTION_FAILED/g or $out =~ /(N)(O)(D)ATA/g
+		     or $out =~ /(SIG_ID)/g
+		     or $out =~ /detached_signature.filename/g
+		    );
+      if ($3) {
+	finish $h;
+	last;
+      }
+      elsif ($2) {
+	if ($2 eq $self->{SECRETKEY}->{ID}) {
+	  $in .= "$self->{PASSPHRASE}\n";
+	  pump $h until $out =~ /(GOOD|BAD)_PASSPHRASE/g;
+	  if ($1 eq 'GOOD') {
+	    $success = 1;
+	    pump $h;
+	    finish $h; $x = $out; last;
+	  }
+	  next;
+	}
+	else {
+	  $out = ''; $in .= "\n";
+	}
+      }
+      elsif ($1) {
+	$success = 1;
+	pump $h;
+	finish $h; $x = $out; last;
+      }
     }
-    #! to:
-    #!# try again in case the message was encrypted for multiple recipients
-#!    $expect->expect(undef,
-#!		    [ qr/passphrase:\s*/i, sub { my $slf = shift;
-#!						 $self->doze(); $slf->send("$self->{PASSPHRASE}\r");
-#!						 exp_continue; }],
-#!		    '-re', 'gpg: encrypted');
-
+    
+    
+    unless ($success || $_[1]) {
+      close $tmpfh2; unlink ($tmpnam2);
+      return undef;
+    }
   }
 
-  $self->doze(); $expect->expect (undef); 
-  unlink $tmpnam; unlink $tmpnam3 if $_[1];
+  # Format of $out for signatures:
+  #
+  # [GNUPG:] SIG_ID DPkOkpATuFPWl2yUR9bw7G6SULk 2005-02-05 1107574559
+  # [GNUPG:] GOODSIG 48196CF147A781BD A 768 ELG-E <768ELG-E@test.com>
+  # [GNUPG:] VALIDSIG 186D893EFEC3AF2F660CA2F548196CF147A781BD 2005-02-05 1107574559 0 3 0 17 2 00 186D893EFEC3AF2F660CA2F548196CF147A781BD
+  # [GNUPG:] TRUST_ULTIMATE
 
-  my $info = $expect->exp_match() . $expect->exp_before(); 
-  $info =~ s/\r//sg;
-  my $trusted = ($info !~ /WARNING: This key is not certified/s);
-  my $unknown = ($info =~ /Can't check signature: public key not found/s);
   my $plaintext = join ('',<$tmpfh2>) || ''; 
   close $tmpfh2; unlink ($tmpnam2);
 
   return ($plaintext) 
-    unless $info =~ /.*Signature\ made\ ((?:\S+\s+){6,7})
-                     using\ \S+\ key\ ID\ (\S+)
-	             \s*gpg:\ (Good|BAD)\ signature\ from/sx;
+    unless $x =~ /SIG_ID/s;
 
-  my $signature = {'Validity' => $3, 'KeyID' => $2, 
-		   'Time' => $1, 'Trusted' => $trusted};
+  my @signatures;
+  $x =~ /SIG_ID \S+ (\S+ \S+).*(GOOD|BAD)SIG (\S{16}).*TRUST_(\S+)/sg;
+  my $signature = {'Validity' => $2, 'KeyID' => $3, 
+		   'Time' => $1, 'Trusted' => $4};
   $signature->{Time} = str2time ($signature->{Time}); 
   bless $signature, 'Crypt::GPG::Signature';
   return ($plaintext, $signature);
@@ -196,20 +226,16 @@ sub verify {
 sub msginfo {
   my $self = shift; 
   my @return;
-
+  
   my ($tmpfh, $tmpnam) = 
     tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
-	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
-  print $tmpfh join '',@{$_[0]}; close $tmpfh; 
-
+ 	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
+  warn join '',@{$_[0]};
+  print $tmpfh join '',@{$_[0]}; close $tmpfh;
+  
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  my $expect = Expect->spawn 
-    ($self->{GPGBIN}, @opts, '--batch', $tmpnam); 
-  $expect->log_stdout($self->{DEBUG});
-
-  $self->doze(); $expect->expect (undef); 
-  my $info = $expect->exp_before();
-  $info =~ s/key, ID (.{8})/{push @return, $1}/sge; 
+  my ($info) = backtick ($self->{GPGBIN}, @opts, '--status-fd', 1, '--no-tty', '--batch', $tmpnam); 
+  $info =~ s/ENC_TO (.{16})/{push @return, $1}/sge; 
   unlink $tmpnam;
   return @return;
 }
@@ -241,69 +267,86 @@ sub encrypt {
   my ($tmpfh, $tmpnam) = 
     tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
 	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
+  my ($tmpfh2, $tmpnam2) = 
+    tempfile( $self->{TMPFILES}, DIR => $self->{TMPDIR}, 
+	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
 
   $message = join ('', @$message) if ref($message) eq 'ARRAY'; 
   print $tmpfh $message; close $tmpfh;
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  push (@opts, '--default-key', $self->{SECRETKEY}) if $sign;
+  push (@opts, '--default-key', ref($self->{SECRETKEY})?$self->{SECRETKEY}->{ID}:$self->{SECRETKEY}) if $sign;
   push (@opts, $sign) if $sign; push (@opts, $armor) if $armor;
   push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
-  my $expect = Expect->spawn ($self->{GPGBIN}, @opts, '-o-', 
-			      @rcpts, '--encrypt', $tmpnam);
-  $expect->log_stdout($self->{DEBUG});
 
-  my ($pos, $err, $matched, $before, $after);
-  
-  if ($sign) {
-    ($pos, $err, $matched, $before, $after) =    
-      $expect->expect(undef, '-re', '-----BEGIN PGP', 
-		      'Use this key anyway?', 'key not found', 
-		      'phrase:');
-    return if $err;
-    if ($pos==4) {
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";
-      ($pos, $err, $matched, $before, $after) = 
-	$expect->expect(undef, '-re', '-----BEGIN PGP', 
-			'Use this key anyway?', 
-			'key not found', 'phrase:');
-      return if ($pos==4);
-      return if $err;
-    }
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                  '-o', $tmpnam2, @rcpts, '--encrypt', $tmpnam], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+  my $pos;
+  eval {
+    pump $h until ($out =~ /(o)penfile.overwrite.okay/g
+		   or $out =~ /(u)(n)trusted_key.override/g    #! Test
+		   or $out =~ /(k)(e)(y) not found/g           #! Test
+		   or $out =~ /(p)(a)(s)(s)phrase.enter/g);
+    $pos = 1 if $1; $pos = 2 if $2; $pos = 3 if $3; $pos = 4 if $4;
+  };
+  return if $@;
+  if ($pos == 4) {
+    undef $pos; $out = '';
+    $in .= "$self->{PASSPHRASE}\n";
+    pump $h until ($out =~ /(o)penfile.overwrite.okay/g
+		   or $out =~ /(u)(n)trusted_key.override/g  #! Test
+		    or $out =~ /(I)(N)(V)_RECP/g              #! Test
+		   or $out =~ /(p)(a)(s)(s)phrase.enter/g);  #! Test
+    $pos = 1 if $1; $pos = 2 if $2; $pos = 3 if $3; $pos = 4 if $4;
+    finish $h, return undef if $pos == 4;                    #! Test
   }
-  
-  while (1) {
-    unless ($pos) {
-      ($pos, $err, $matched, $before, $after) = $expect->expect 
-	(undef, '-re', '-----BEGIN PGP', 
-	 'Use this key anyway?', 'key not found');
-    }
-    return if $err;
-    if ($pos==2) {
-      $self->doze();
+
+#  while (1) {
+#    unless ($pos) {
+#      ($pos, $err, $matched, $before, $after) = $expect->expect 
+#	(undef, 'Overwrite', # '-re', '-----BEGIN PGP', 
+#	 'Use this key anyway?', 'key not found');
+#    }
+#    return if $err;
+    if ($pos == 2) {
       if ($self->{ENCRYPTSAFE}) {
-	print $expect "n\n"; 
-	$expect->expect (undef); 
+	$in .= "N\n";
+	finish $h;
 	unlink $tmpnam;
 	return;
       }
       else {
-	print $expect "y\n";
+	$in .= "Y\n";
+#	finish $h;
+	pump $h until ($out =~ /(o)penfile.overwrite.okay/g
+		       or $out =~ /(o)(p)enfile.askoutname/g);  #! Test
+#		       or $out =~ /(I)(N)(V)_RECP/g              #! Test
+#		       or $out =~ /(p)(a)(s)(s)phrase.enter/g);  #! Test
+	$pos = 1 if $1; $pos = 2 if $2;
       }	
     }
-    elsif ($pos==3) {
-      $expect->expect (undef); 
+    elsif ($pos == 3) {
+      finish $h;
       unlink $tmpnam;
       return;
     }
-    else {
-      $info = $matched;
-      last;
-    }
+#    else {
+#      last;
+#    }
+#  }
+  
+  if ($pos == 1) {
+    $in .= "Y\n";
+    finish $h;
   }
-  $expect->expect (undef);
-  $info .= $expect->exp_before(); 
-  $info =~ s/.*\n(-----BEGIN PGP)/$1/s;
+
+  my @info = <$tmpfh2>; 
+  close $tmpfh2;
+  unlink $tmpnam2;
+  $info = join '', @info;
+
   unlink $tmpnam;
   return $info;
 }
@@ -328,36 +371,37 @@ sub addkey {
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   my @listopts = qw(--fingerprint --fingerprint --with-colons);
 
-  my @info = backtick($self->{GPGBIN}, @opts, @pret1, '-v', 
-		      '--import', $tmpnam);
-  my @keylist = backtick($self->{GPGBIN}, @opts, @pret1,
-			 '--check-sigs', @listopts, @keyids); 
-  my @seclist = backtick($self->{GPGBIN}, @opts, @pret1,
-			 '--list-secret-keys', @listopts);
+  backtick($self->{GPGBIN}, @opts, @pret1, '-v', '--import', $tmpnam);
+  backtick ($self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS}, '--check-trustdb');
+  my ($keylist) = backtick($self->{GPGBIN}, @opts, @pret1, '--marginals-needed',
+			   $self->{MARGINALS}, '--check-sigs', @listopts, @keyids); 
+  my ($seclist) = backtick($self->{GPGBIN}, @opts, @pret1,
+			   '--list-secret-keys', @listopts);
 
   my @seckeys = grep { my $id = $_->{ID}; 
 		       (grep { $id eq $_ } @keyids) ? $_ : '' } 
-    $self->parsekeys(@seclist);
-  my @ret = ($self->parsekeys(@keylist), @seckeys);
-  
+    $self->parsekeys(split /\n/,$seclist);
+  my @ret = ($self->parsekeys(split /\n/,$keylist), @seckeys);
+
   if ($pretend) {
-    @keylist = backtick($self->{GPGBIN}, @opts, @pret2, 
-			'--check-sigs', @listopts); 
+#! This hack needed to get real calc trusts for to-import keys. Test!
+    backtick ($self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS}, '--check-trustdb');
+    ($keylist) = backtick($self->{GPGBIN}, @opts, @pret2, '--marginals-needed',
+			  $self->{MARGINALS}, '--check-sigs', @listopts); 
+
     my @realkeylist = grep { my $id = $_->{ID} if $_; 
 			     $id and grep { $id eq $_->{ID} } @ret } 
-      map { ($_->{Keyring} eq "$tmpdir/secring.gpg" 
-	     or $_->{Keyring} eq "$tmpdir/pubring.gpg") ? $_ : 0 } 
-	$self->parsekeys(@keylist);
+#      map { ($_->{Keyring} eq "$tmpdir/secring.gpg" 
+#	     or $_->{Keyring} eq "$tmpdir/pubring.gpg") ? $_ : 0 } 
+	$self->parsekeys(split /\n/,$keylist);
     @ret = (@realkeylist, @seckeys);
   }
   else {
     if (@keyids) {
-      my @info = backtick($self->{GPGBIN}, @opts, @pret1, 
-			  "--export", '-a', @keyids);
-      print $tmpfh (join '', @info); close $tmpfh;
+      my ($out) = backtick($self->{GPGBIN}, @opts, @pret1, "--export", '-a', @keyids);
+      print $tmpfh $out; close $tmpfh;
     }
-    my @info = backtick($self->{GPGBIN}, @opts, '-v', 
-			'--import', $tmpnam);
+    backtick($self->{GPGBIN}, @opts, '-v', '--import', $tmpnam);
   }
   rmtree($tmpdir, 0, 1);
   unlink($tmpnam);
@@ -374,9 +418,10 @@ sub export {
   my $secret = $key->{Type} eq 'sec' ? '-secret-keys' : '';
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
+  push (@opts, '--status-fd', '1');
 
-  join('', backtick($self->{GPGBIN}, @opts, 
-		    "--export$secret", $armor, $id));
+  my ($out) = backtick($self->{GPGBIN}, @opts, "--export$secret", $armor, $id);
+  $out;
 }
 
 sub keygen {
@@ -395,7 +440,7 @@ sub keygen {
   my $bigkey = ($keysize > 1536);   
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   for (0..1) { 
-    backtick ($self->{GPGBIN}, @opts, '--no-tty', '--gen-random', 0, 1); 
+    backtick ($self->{GPGBIN}, @opts, '--status-fd', '1', '--no-tty', '--gen-random', 0, 1); 
   }
 
   my $pid = open(GPG, "-|");
@@ -406,40 +451,29 @@ sub keygen {
     return \*GPG;
   }
   else {
-    my $expect = Expect->spawn ($self->{GPGBIN}, @opts, '--gen-key'); 
-    $expect->log_stdout(0);
-    $expect->expect (undef, 'selection?'); $self->doze(); 
-    print $expect ( "1\r"); print ".\n";
-    $expect->expect (undef, 'do you want?'); $self->doze(); 
-    print $expect ("$keysize\r"); print ".\n";
-    $expect->expect (undef, 'keysize?'), $self->doze(), 
-      print $expect ("y\r"), print ".\n" if $bigkey;
-    $expect->expect (undef, 'valid for?'); $self->doze(); 
-    print $expect ("$expire\r"); print ".\n";
-    $expect->expect (undef, '(y/n)?'); $self->doze(); 
-    print $expect ("y\r"); print ".\n";
-    $expect->expect (undef, 'name:'); $self->doze(); 
-    print $expect ("$name\r"); print ".\n"; 
-    $expect->expect (undef, 'address:'); $self->doze(); 
-    print $expect ("$email\r"); print ".\n";
-    $expect->expect (undef, 'Comment:'); $self->doze(); 
-    print $expect ("\r"); print ".\n";
-    $expect->expect (undef, 'uit?'); $self->doze(); 
-    print $expect ("o\r"); print ".\n";
-    $expect->expect (undef, 'phrase: '); $self->doze(); 
-    print $expect ("$pass\r"); print ".\n";
-    $expect->expect (undef, 'phrase: '); $self->doze(); 
-    print $expect ("$pass\r"); print ".\n";
-    $expect->expect (undef, '-re', '([\+\.\>\<\^]|created and signed)');
-    my $x = $expect->exp_match(); 
-    while ($x !~ /created and signed/) {
-      print "$x\n";
-      my $t = $expect->expect 
-	(1, '-re', '([\+\.\>\<\^]|created and signed)');
-      $x = $expect->exp_match();
+    my ($in, $out, $err, $in_q, $out_q, $err_q);
+    my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                    '--gen-key'], \$in, \$out, \$err);
+    local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+
+    pump $h until $out =~ /keygen\.algo/g; $in .= "1\n";
+    pump $h until $out =~ /keygen\.size/g; $in .= "$keysize\n";
+    pump $h until $out =~ /keygen\.valid/g; $in .= "$expire\n";
+    pump $h until $out =~ /keygen\.name/g; $in .= "$name\n";
+    pump $h until $out =~ /keygen\.email/g; $in .= "$email\n";
+    pump $h until $out =~ /keygen.comment/g; $in .= "\n";
+    pump $h until $out =~ /passphrase\.enter/g; $out = ''; $in .= "$pass\n"; 
+    pump $h until $out =~ /(PROGRESS primegen [\+\.\>\<\^]|KEY_CREATED)/g;
+    $out = ''; my $x = ''; my $y = $1;
+    while ($y !~ /KEY_CREATED/g) {
+      print "$x\n"; 
+      pump $h until $out =~ /(PROGRESS primegen [\+\.\>\<\^]|KEY_CREATED)/g;
+      my $o = $out; $out = ''; $y .= $o;
+      my @progress = ($o =~ /[\+\.\>\<\^]/g);
+      $x = join "\n",@progress;
     }	
     print "|\n";
-    $self->doze(); $expect->expect (undef, 'nothing.');
+    finish $h;
     exit();
   }
 }
@@ -449,13 +483,14 @@ sub keydb {
   my @ids = map { return unless /$self->{VKEYID}/; $_ } @_;
   my @moreopts = qw(--fingerprint --fingerprint --with-colons);
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  my @keylist = backtick($self->{GPGBIN}, @opts, 
-			 '--check-sigs', @moreopts, @ids); 
-  $self->doze();
-  my @seclist = backtick($self->{GPGBIN}, @opts, 
-			 '--list-secret-keys', @moreopts, @ids); 
-  @keylist = grep { /^...:.*:$/ } (@keylist, @seclist);
-  $self->parsekeys (@keylist);
+  backtick ($self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS}, '--check-trustdb');
+  my ($keylist) = backtick($self->{GPGBIN}, @opts, '--marginals-needed', $self->{MARGINALS},
+			   '--no-tty', '--check-sigs', @moreopts, @ids); 
+  my ($seclist) = backtick($self->{GPGBIN}, @opts,
+			   '--no-tty', '--list-secret-keys', @moreopts, @ids); 
+  my @keylist = split /\n(\s*\n)?/, $keylist;
+  my @seclist = split /\n(\s*\n)?/, $seclist;
+  $self->parsekeys (@keylist, @seclist);
 }
 
 sub keyinfo {
@@ -466,8 +501,10 @@ sub parsekeys {
   my $self=shift; my @keylist = @_;
   my @keys; my ($i, $subkey, $subnum, $uidnum) = (-1);
   my $keyring = '';
+  $^W = 0;
   foreach (@keylist) {
     next if /^\-/;
+    next if /^(gpg|tru):/;
     if (/^\//) {
       $keyring = $_; chomp $keyring;
       next;
@@ -538,6 +575,7 @@ sub parsekeys {
       }
     }
   }
+  $^W = 1;
   return map {bless $_, 'Crypt::GPG::Key'} @keys;
 }
 
@@ -550,45 +588,41 @@ sub keypass {
       and $key->{Type} eq 'sec';
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-			      '--edit-key', $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG});
 
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ("passwd\r"); 
-  $expect->expect (undef, 'This key is not protected.', 'phrase: '); 
-  if ($expect->exp_match_number == 1) {
-    $expect->close, return if $oldpass;
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                 '--edit-key', $key->{ID}], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+
+  pump $h until $out =~ /keyedit\.prompt/g; $in .= "passwd\n";
+  pump $h until ($out =~ /GOOD_PASSPHRASE/g
+		 or $out =~ /(passphrase\.enter)/g);
+  
+  unless ($1) {
+    finish $h, return if $oldpass;
   }
   else {
-    $self->doze(); print $expect ("$oldpass\r"); 
-    $expect->expect (undef, 'please try again', 'phrase: '); 
-    if ($expect->exp_match_number == 1) {
-
-      #! Suggested mod (yu\x40math.duke.edu) - Change below:
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";
-      $expect->expect (undef, 'passphrase:');
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";    
-      $expect->expect (undef, 'Command>'); 
-      $self->doze(); print $expect ("quit\r");
-      $expect->expect (undef);
+    $^W = 0; /()/; $^W = 1; $out = '';
+    $in .= "$oldpass\n";
+    pump $h until ($out =~ /BAD_PASSPHRASE/g                #! Test
+		   or $out =~ /(passphrase\.enter)/g);
+    unless ($1) {
+      finish $h;
       return;
-      #! To:
-      #!       $expect->close; return;
     }
   }
-  $self->doze(); print $expect ("$newpass\r"); 
-  $expect->expect (undef, 'Repeat passphrase: '); 
-  $self->doze(); print $expect ("$newpass\r"); 
-  $expect->expect (undef, 'really want to do this?', 'Command>'); 
-  if ($expect->exp_match_number == 1) {
-    $self->doze(); print $expect "y\r";
-    $expect->expect (undef, 'Command>'); 
+  $^W = 0; /()/; $^W = 1; $out = '';
+  $in .= "$newpass\n";
+  pump $h until ($out =~ /change_passwd\.empty\.okay/g
+		 or $out =~ /(keyedit\.prompt)/g);
+  unless ($1) {
+    $in .= "Y\n";
+    pump $h until $out =~ /keyedit\.prompt/g;
   }
-  $self->doze(); print $expect ("quit\r"); 
-  $expect->expect (undef, 'changes?'); $self->doze(); 
-  print $expect ("y\r"); 
-  $self->doze(); $expect->expect (undef);
+  $in .= "quit\n";
+  pump $h until $out =~ /keyedit\.save\.okay/g;
+  $in .= "Y\n";
+  finish $h;
   return 1;
 }
 
@@ -598,92 +632,105 @@ sub keytrust {
   return unless $trustlevel =~ /$self->{VTRUSTLEVEL}/;
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-			      '--edit-key', $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG});
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ("trust\r"); 
-  $expect->expect (undef, 'decision? '); $self->doze(); 
-  print $expect ("$trustlevel\r"); 
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ("quit\r"); 
-  $self->doze(); $expect->expect (undef);
+
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty',
+                 '--status-fd', '1', '--command-fd', 0,
+                 '--edit-key', $key->{ID}], 
+                 \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+  pump $h until $out =~ /keyedit\.prompt/g; $in .= "trust\n";
+  pump $h until $out =~ /edit_ownertrust\.value/g; $in .= "$trustlevel\n";
+  if ($trustlevel == 5) {
+    pump $h until $out =~ /edit_ownertrust\.set_ultimate\.okay/g; $in .= "Y\n";
+  }
+  pump $h until $out =~ /keyedit\.prompt/g; $in .= "quit\n";
+  finish $h;
   return 1;  
+}
+
+sub keyprimary {
 }
 
 sub certify {
   my $self = shift; 
-  my ($key, $local, @uids) = @_; 
-  my $ret = 1;
+  my ($key, $local, $class, @uids) = @_; 
 
   return unless $self->{SECRETKEY} =~ /$self->{VKEYID}/ 
     and $self->{PASSPHRASE} =~ /$self->{VPASSPHRASE}/;
-  
+
   return unless @uids and !grep { $_ =~ /\D/; } @uids; 
-  my $i = 0;
+  my $i = 0; my $ret = 0;
 
   ($key) = $self->keydb($key);
   my $signingkey = ($self->keydb($self->{SECRETKEY}))[0]->{ID};
 
-  #! Check if already signed. Buggy! 
-  #! Fix this and remove postemptive check below
+  # Check if already signed.
   return 1 unless grep { !grep { $signingkey eq $_->{ID} } 
 			   @{$_->{Signatures}} } 
     (@{$key->{UIDs}})[@uids];
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   push (@opts, '--default-key', $self->{SECRETKEY});
-  my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-			      '--edit-key', $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG});
+
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+
+  my $h = start ([$self->{GPGBIN}, @opts, '--status-fd', '1', '--command-fd', 0, '--no-tty',
+                 '--edit-key', $key->{ID}], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
 
   for (@uids) {
     my $uid = $_+1;
-    $expect->expect (undef, 'Command>'); $self->doze(); 
+    pump $h until ($out =~ /keyedit\.prompt/g); 
 
-    # Hack to make UID numbers correspond correctly.
+# Old hack to make UID numbers correspond correctly.
+#    my $info = $out; $out = '';
+#    $info =~ /\((\d+)\)\./; my $primary = $1;
+#    unless ($primary == 1) {
+#      if ($uid == 1) {
+#	$uid = $primary;
+#      }
+#      elsif ($uid <= $primary) {
+#	$uid--;
+#      }
+#    }
 
-    my $info = $expect->exp_before();
-    $info =~ /\((\d+)\)\./; my $primary = $1;
-    unless ($primary == 1) {
-      if ($uid == 1) {
-	$uid = $primary;
-      }
-      elsif ($uid <= $primary) {
-	$uid--;
-      }
+    $in .= "uid $uid\n"; 
+  }
+  pump $h until ($out =~ /keyedit\.prompt/g); 
+  $out = '';
+  $in .= $local ? "lsign\n" : "sign\n"; 
+
+  pump $h until ($out =~ /(s)ign_uid\.class/g
+		 or $out =~ /keyedit\.prompt/g);
+  my $fix = $1;
+  unless ($1) {
+    $out = ''; $in .= "\n";
+    pump $h until ($out =~ /(s)ign_uid\.class/g
+		 or $out =~ /keyedit\.prompt/g);
+    $fix = $1;
+  }
+  
+  if ($fix) {
+    $in .= "$class\n";
+    pump $h until ($out =~ /sign_uid\.okay/g);
+    $^W = 0; /()/; $^W = 1; $out = ''; $in .= "Y\n"; 
+    pump $h until ($out =~ /passphrase\.enter/g
+		   or $out =~ /(keyedit.prompt)/g);
+    $ret=1;
+    unless ($1) {
+      $out = ''; $^W = 0; /()/; $^W = 1; $in .= "$self->{PASSPHRASE}\n"; 
+      pump $h until ($out =~ /keyedit\.prompt/g
+		     or $out =~ /(BAD_PASSPHRASE)/g);
+      $ret=0 if $1;
     }
-
-    print $expect ("uid $uid\r"); 
   }
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ($local ? "lsign\r" : "sign\r"); 
-  #! Postemptive check. Fix pre-emptive check & remove this.
-  my $hack = 1;
-  $expect->expect (undef, 'sign?', 'Already signed', 'Unable to sign.'); $self->doze(); 
-  if ($expect->exp_match_number == 1) {
-    print $expect ("y\r"); 
-    $expect->expect (undef, 'phrase:'); $self->doze(); 
-    print $expect "$self->{PASSPHRASE}\r"; 
-    $expect->expect (undef, 'Command>', 'phrase:');
-    if ($expect->exp_match_number == 2) {
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";
-      $expect->expect (undef, 'passphrase:');
-      $self->doze(); print $expect "$self->{PASSPHRASE}\r";    
-      $expect->expect (undef, 'Command>');
-      $ret = 0;
-    }
+  $in .= "quit\n";
+  if ($ret) {
+    pump $h until ($out =~ /save\.okay/g or $out =~ /(k)eyedit\.prompt/g);
+    $in .= "Y\n" unless $1;
   }
-  else {
-    $expect->expect (undef, 'Command>');
-    $ret = 1; $hack = 0;
-  }
-  $self->doze(); print $expect ("quit\r"); 
-  if ($ret and $hack) {
-    $expect->expect (undef, 'changes?'); $self->doze(); 
-    print $expect ("y\r"); 
-  }
-  $self->doze(); $expect->expect (undef);
+  finish $h;
   $ret;  
 }
 
@@ -696,19 +743,18 @@ sub delkey {
     '--delete-secret-and-public-key':'--delete-key';
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
 
-  return unless my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-					    $del, $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG}); 
-  $expect->expect (undef, 'delete it first.', 'keyring?'); 
-  return undef if ($expect->exp_match_number==1); 
-  $self->doze(); print $expect ("y\r"); 
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                 $del, $key->{ID}], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+  pump $h until ($out =~ /delete it first\./g or $out =~ /(delete_key)(.secret)?.okay/g); 
+                       #! ^^^^^^^^^^^^^^^^^ to-fix.
+  finish $h, return undef unless $1; 
+  $in .= "Y\n";
   if ($key->{Type} eq 'sec') {
-    $expect->expect (undef, 'really delete?'); $self->doze(), 
-      print $expect ("y\r");
-    $expect->expect (undef, 'keyring?'); $self->doze(), 
-      print $expect ("y\r");
+    pump $h until $out =~ /delete_key.okay/g; $in .= "Y\n";
   }
-  $expect->expect (undef);
+  finish $h;
   return 1;
 }
 
@@ -718,18 +764,17 @@ sub disablekey {
   return unless $key->{ID} =~ /$self->{VKEYID}/;
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  return unless my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-					    '--edit-key', $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG}); 
 
-  $expect->expect (undef, 'been disabled', 'Command>'); 
-  return undef if $expect->exp_match_number==1; $self->doze(); 
-  print $expect ("disable\r"); 
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ("quit\r"); 
-  $expect->expect (undef, 'changes?'); $self->doze(); 
-  print $expect ("y\r"); 
-  $self->doze(); $expect->expect (undef);
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                 '--edit-key', $key->{ID}], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+  pump $h until ($out =~ /been disabled/g or $out =~ /(keyedit\.prompt)/g); 
+                       #! ^^^^^^^^^^^^^ to-fix.
+  finish $h, return undef unless $1; 
+  $in .= "disable\n";
+  pump $h until $out =~ /keyedit\.prompt/g; $in .= "quit\n";
+  finish $h;
   return 1;
 }
 
@@ -739,56 +784,34 @@ sub enablekey {
   return unless $key->{ID} =~ /$self->{VKEYID}/;
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  return unless my $expect = Expect->spawn ($self->{GPGBIN}, @opts, 
-					    '--edit-key', $key->{ID}); 
-  $expect->log_stdout($self->{DEBUG}); 
 
-  $expect->expect (undef, 'been disabled', 'Command>'); 
-  return undef unless $expect->exp_match_number==1; $self->doze(); 
-  print $expect ("enable\r"); 
-  $expect->expect (undef, 'Command>'); $self->doze(); 
-  print $expect ("quit\r"); 
-  $expect->expect (undef, 'changes?'); $self->doze(); 
-  print $expect ("y\r"); 
-  $self->doze(); $expect->expect (undef);
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([$self->{GPGBIN}, @opts, '--no-tty', '--status-fd', '1', '--command-fd', 0,
+                 '--edit-key', $key->{ID}], \$in, \$out, \$err, timeout( 30 ));
+  local $SIG{CHLD} = 'IGNORE'; local $SIG{PIPE} = 'IGNORE';
+  pump $h until ($out =~ /been disabled/g or $out =~ /(keyedit\.prompt)/g); 
+                       #! ^^^^^^^^^^^^^ to-fix.
+  finish $h, return undef unless $1; 
+  $in .= "enable\n";
+  pump $h until $out =~ /keyedit\.prompt/g; $in .= "quit\n";
+  finish $h;
   return 1;
 }
 
 sub backtick {
-  use English; my @ret;
-  die "Can't fork: $!" unless defined(my $pid = open(KID, "-|"));
-  if ($pid) {           # parent
-    while (<KID>) {
-      push(@ret, $_);
-    }
-    close KID;
-  } 
-  else {
-    my @temp     = ($EUID, $EGID);
-    my $orig_uid = $UID;
-    my $orig_gid = $GID;
-    $EUID = $UID;
-    $EGID = $GID;
-    # Drop privileges
-    $UID  = $orig_uid;
-    $GID  = $orig_gid;
-    # Make sure privs are really gone
-    ($EUID, $EGID) = @temp;
-    die "Can't drop privileges"
-      unless $UID == $EUID  && $GID eq $EGID;
-    exec (@_) or die "can't exec $_[0]: $!";
-  }
-  return @ret;
-}
-
-sub doze {
-  sleep shift->{DELAY};
+  my ($in, $out, $err, $in_q, $out_q, $err_q);
+  my $h = start ([@_], \$in, \$out, \$err, timeout( 10 ));
+  local $SIG{CHLD} = 'IGNORE';
+  local $SIG{PIPE} = 'IGNORE';
+  finish $h;
+  return ($out, $err);
 }
 
 sub AUTOLOAD {
   my $self = shift; (my $auto = $AUTOLOAD) =~ s/.*:://;
-  if ($auto =~ /^(passphrase|secretkey|armor|gpgbin|gpgopts|delay|
-                  detach|encryptsafe|version|comment|debug)$/x) {
+#  warn "FOO $auto $_[0]\n";
+  if ($auto =~ /^(passphrase|secretkey|armor|gpgbin|gpgopts|delay|marginals|
+                  detach|encryptsafe|version|comment|debug|tmpdir)$/x) {
     return $self->{"\U$auto"} unless defined $_[0];
     $self->{"\U$auto"} = shift;
   }
@@ -825,8 +848,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.42 $
- $Date: 2002/12/11 03:33:19 $
+ $Revision: 1.49 $
+ $Date: 2005/02/10 09:30:47 $
 
 =head1 SYNOPSIS
 
@@ -849,7 +872,7 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
   my @recipients = $gpg->msginfo($encrypted);
 
-  # Decrypt / verify signature on a message, 
+  # Decrypt a message.
 
   my ($plaintext, $signature) = $gpg->verify($encrypted);
 
@@ -876,16 +899,18 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 DESCRIPTION
 
-The Crypt::GPG module provides near complete access to GnuPG
-functionality through an object oriented interface. It provides
-methods for encryption, decryption, signing, signature verification,
-key generation, key export and import, and most other key management
-functions. 
+The Crypt::GPG module provides access to the functionality of the
+GnuPG (www.gnupg.org) encryption tool through an object oriented
+interface. 
 
-This module works almost identically to its cousin, Crypt::PGP5. The
-two modules together provide a uniform interface to deal with both PGP
-and GnuPG. Eventually, these modules will be folded into a single
-module which will interface with GnuPG as well as all versions of PGP.
+It provides methods for encryption, decryption, signing, signature
+verification, key generation, key certification, export and
+import. Key-server access is on the todo list.
+
+This release of the module may create compatibility issues with
+previous versions. If you find any such problems, or any bugs or
+documentation errors, please do report them to
+crypt-gpg@neomailbox.com.
 
 =head1 CONSTRUCTOR
 
@@ -915,11 +940,9 @@ GPGOPTS string.
 
 =item B<delay($seconds)>
 
-Sets the B<DELAY> instance variable. This is the time (in seconds, or
-fractions of seconds) to wait after receiving a prompt from the GnuPG
-executable before starting to respond to it. I've noticed on some
-machines that the executable hangs if it gets input too fast. The
-delay is off by default.
+Sets the B<DELAY> instance variable. This is no longer necessary (nor
+used) in the current version of the module, but remains so existing
+scripts don't break.
 
 =item B<secretkey($keyid)>
 
@@ -1113,6 +1136,24 @@ Enables the key specified by the Crypt::GPG::Key object B<$key>.
 
 =back
 
+=head1 TODO
+
+=over 2
+
+=item * 
+
+Key server access.
+
+=item *
+
+More complete key manipulation interface.
+
+=item * 
+
+Filehandle interface to handle large messages.
+
+=back
+
 =head1 BUGS
 
 =over 2
@@ -1128,8 +1169,6 @@ Some key manipulation functions are missing.
 =item * 
 
 The method call interface is subject to change in future versions.
-Key manipulation methods will be encapsulated into the Crypt::GPG::Key
-class.
 
 =item * 
 
@@ -1148,7 +1187,12 @@ Methods may break if you don't use ASCII armoring.
 
 =over 2
 
-$Log: GPG.pm,v $
+Revision 1.49  2005/02/10 09:30:47  cvs
+
+ - Overhauled to use IPC::Run instead of Expect.
+
+ - Test suite split up into multiple scripts.
+
 Revision 1.42  2002/12/11 03:33:19  cvs
 
  - Fixed bug in certify() when trying to certify revoked a key.
@@ -1222,18 +1266,22 @@ Revision 1.29  2002/09/20 11:19:02  cvs
 
 =head1 AUTHOR
 
-Crypt::GPG is Copyright (c) 2000-2001 Ashish Gulhati
-<hash@netropolis.org>. All Rights Reserved.
+Crypt::GPG is Copyright (c) 2000-2005 Ashish Gulhati
+<crypt-gpg@neomailbox.com>. All Rights Reserved.
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanks to Barkha for inspiration and lots of laughs, and to the GnuPG
-team.
+Thanks to Barkha, my sunshine. And to the GnuPG team and everyone
+who writes free software.
 
 =head1 LICENSE
 
 This code is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 BUGS REPORTS, PATCHES AND FEATURE REQUESTS
+
+Are very welcome. Email crypt-gpg@neomailbox.com.
 
 =cut
 
