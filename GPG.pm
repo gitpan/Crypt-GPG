@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.40 2002/09/23 23:01:53 cvs Exp $
+# $Id: GPG.pm,v 1.42 2002/12/11 03:33:19 cvs Exp $
 
 package Crypt::GPG;
 
@@ -22,15 +22,15 @@ use File::Temp qw( tempfile tempdir );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::HIGH );
-( $VERSION ) = '$Revision: 1.40 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.42 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
 	  FORCEDOPTS     =>   '--no-secmem-warning',
-	  GPGOPTS        =>   '--lock-once --compress-algo 1 ' .
+	  GPGOPTS        =>   '--lock-multiple --compress-algo 1 ' .
 	                      '--cipher-algo cast5 --force-v3-sigs',
 	  VERSION        =>   $VERSION,
-	  DELAY          =>   0,
+	  DELAY          =>   0.1,
 	  PASSPHRASE     =>   '',
 	  COMMENT        =>   "Crypt::GPG v$VERSION",
 	  ARMOR          =>   1,
@@ -82,7 +82,7 @@ sub sign {
      @secretkey, $tmpnam);
   $expect->log_stdout($self->{DEBUG});
 
-  $expect->expect (undef, '-re', '-----BEGIN', 'passphrase:');
+  $expect->expect (undef, '-re', '-----BEGIN', 'passphrase:', 'signing failed');
   if ($expect->exp_match_number == 2) {
     $self->doze(); print $expect "$self->{PASSPHRASE}\r";
     $expect->expect (undef, '-re', '-----BEGIN', 'passphrase:');
@@ -94,6 +94,10 @@ sub sign {
       unlink $tmpnam; 
       return;
     }
+  }
+  elsif ($expect->exp_match_number == 3) {
+    unlink $tmpnam; $expect->close;
+    return;
   }
   $expect->expect (undef); 
   my $info = $expect->exp_match() . $expect->exp_before(); 
@@ -146,6 +150,9 @@ sub verify {
 
   if ($expect->exp_match_number==2) {
     $self->doze(); print $expect "$self->{PASSPHRASE}\r";
+
+
+    #! Suggested mod (yu\x40math.duke.edu) - change below:
     $expect->expect 
       (undef, '-re', 'gpg: encrypted', '-re', 'passphrase:\s*');
     if ($expect->exp_match_number()==2) {
@@ -154,6 +161,14 @@ sub verify {
       unlink ($tmpnam, $tmpnam2);
       return;
     }
+    #! to:
+    #!# try again in case the message was encrypted for multiple recipients
+#!    $expect->expect(undef,
+#!		    [ qr/passphrase:\s*/i, sub { my $slf = shift;
+#!						 $self->doze(); $slf->send("$self->{PASSPHRASE}\r");
+#!						 exp_continue; }],
+#!		    '-re', 'gpg: encrypted');
+
   }
 
   $self->doze(); $expect->expect (undef); 
@@ -167,14 +182,13 @@ sub verify {
   close $tmpfh2; unlink ($tmpnam2);
 
   return ($plaintext) 
-    unless $info =~ /.*Signature\ made\ ((?:\S+\s+){6})
+    unless $info =~ /.*Signature\ made\ ((?:\S+\s+){6,7})
                      using\ \S+\ key\ ID\ (\S+)
 	             \s*gpg:\ (Good|BAD)\ signature\ from/sx;
 
   my $signature = {'Validity' => $3, 'KeyID' => $2, 
 		   'Time' => $1, 'Trusted' => $trusted};
-  $signature->{Time} =~ s/\S+\s*$//; 
-  $signature->{Time} = str2time ($signature->{Time}, $1); 
+  $signature->{Time} = str2time ($signature->{Time}); 
   bless $signature, 'Crypt::GPG::Signature';
   return ($plaintext, $signature);
 }
@@ -190,7 +204,7 @@ sub msginfo {
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   my $expect = Expect->spawn 
-    ('$self->{GPGBIN', @opts, '--batch', $tmpnam); 
+    ($self->{GPGBIN}, @opts, '--batch', $tmpnam); 
   $expect->log_stdout($self->{DEBUG});
 
   $self->doze(); $expect->expect (undef); 
@@ -203,9 +217,9 @@ sub msginfo {
 sub encrypt {
   my $self = shift; 
   my ($message, $rcpts) = @_;
-  my $sign; my $info;
+  my $info;
 
-  my $sign = $_[2] eq '-sign' ? '--sign' : '';
+  my $sign = $_[2] && $_[2] eq '-sign' ? '--sign' : '';
   my $armor = $self->{ARMOR} ? '-a' : '';
 
   if ($sign) {
@@ -246,6 +260,7 @@ sub encrypt {
       $expect->expect(undef, '-re', '-----BEGIN PGP', 
 		      'Use this key anyway?', 'key not found', 
 		      'phrase:');
+    return if $err;
     if ($pos==4) {
       $self->doze(); print $expect "$self->{PASSPHRASE}\r";
       ($pos, $err, $matched, $before, $after) = 
@@ -253,6 +268,7 @@ sub encrypt {
 			'Use this key anyway?', 
 			'key not found', 'phrase:');
       return if ($pos==4);
+      return if $err;
     }
   }
   
@@ -463,7 +479,6 @@ sub parsekeys {
       $keys[++$i] = { 
 		     Keyring    =>    $keyring,
 		     Type       =>    $type,
-		     Calctrust  =>    $trust,
 		     Ownertrust =>    $ownertrust,
 		     Bits       =>    $size,
 		     ID         =>    $id,
@@ -472,7 +487,7 @@ sub parsekeys {
 		     Algorithm  =>    $algorithm,
 		     Use        =>    ''
 		    };
-      push (@{$keys[$i]->{UIDs}}, { UID => $uid }), 
+      push (@{$keys[$i]->{UIDs}}, { 'UID' => $uid, 'Calctrust' => $trust }), 
 	$uidnum++ if $uid;
     }
     else {
@@ -517,9 +532,9 @@ sub parsekeys {
 		Valid           =>    $valid
 	      } );
       }
-      elsif (/^uid:.*:([^:]+):$/) {
+      elsif (/^uid:(.?):.*:([^:]+):$/) {
 	$subkey = 0; $uidnum++;
-	push (@{$keys[$i]->{UIDs}}, { UID => $1 });
+	push (@{$keys[$i]->{UIDs}}, { UID => $2, Calctrust => $1 });
       }
     }
   }
@@ -549,6 +564,8 @@ sub keypass {
     $self->doze(); print $expect ("$oldpass\r"); 
     $expect->expect (undef, 'please try again', 'phrase: '); 
     if ($expect->exp_match_number == 1) {
+
+      #! Suggested mod (yu\x40math.duke.edu) - Change below:
       $self->doze(); print $expect "$self->{PASSPHRASE}\r";
       $expect->expect (undef, 'passphrase:');
       $self->doze(); print $expect "$self->{PASSPHRASE}\r";    
@@ -556,6 +573,8 @@ sub keypass {
       $self->doze(); print $expect ("quit\r");
       $expect->expect (undef);
       return;
+      #! To:
+      #!       $expect->close; return;
     }
   }
   $self->doze(); print $expect ("$newpass\r"); 
@@ -621,17 +640,31 @@ sub certify {
   for (@uids) {
     my $uid = $_+1;
     $expect->expect (undef, 'Command>'); $self->doze(); 
+
+    # Hack to make UID numbers correspond correctly.
+
+    my $info = $expect->exp_before();
+    $info =~ /\((\d+)\)\./; my $primary = $1;
+    unless ($primary == 1) {
+      if ($uid == 1) {
+	$uid = $primary;
+      }
+      elsif ($uid <= $primary) {
+	$uid--;
+      }
+    }
+
     print $expect ("uid $uid\r"); 
   }
   $expect->expect (undef, 'Command>'); $self->doze(); 
   print $expect ($local ? "lsign\r" : "sign\r"); 
   #! Postemptive check. Fix pre-emptive check & remove this.
   my $hack = 1;
-  $expect->expect (undef, 'sign?', 'Already signed'); $self->doze(); 
+  $expect->expect (undef, 'sign?', 'Already signed', 'Unable to sign.'); $self->doze(); 
   if ($expect->exp_match_number == 1) {
     print $expect ("y\r"); 
     $expect->expect (undef, 'phrase:'); $self->doze(); 
-    print $expect ("$self->{PASSPHRASE}\r"); 
+    print $expect "$self->{PASSPHRASE}\r"; 
     $expect->expect (undef, 'Command>', 'phrase:');
     if ($expect->exp_match_number == 2) {
       $self->doze(); print $expect "$self->{PASSPHRASE}\r";
@@ -773,7 +806,8 @@ use Carp;
 sub AUTOLOAD {
   my $self = shift; (my $auto = $AUTOLOAD) =~ s/.*:://;
   if ($auto =~ /^(validity|keyid|time|trusted)$/) {
-    return $self->{"\U$auto"};
+    return $self->{"KeyID"} if ( $auto eq "keyid" );
+    return $self->{"\u$auto"};
   }
   elsif ($auto eq 'DESTROY') {
   }
@@ -791,8 +825,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.40 $
- $Date: 2002/09/23 23:01:53 $
+ $Revision: 1.42 $
+ $Date: 2002/12/11 03:33:19 $
 
 =head1 SYNOPSIS
 
@@ -1115,6 +1149,14 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
+Revision 1.42  2002/12/11 03:33:19  cvs
+
+ - Fixed bug in certify() when trying to certify revoked a key.
+
+ - Applied dharris\x40drh.net's patch to allow for varying date formats
+   between gpg versions, and fix time parsing and the
+   Crypt::GPG::Signature autoloaded accessor functions.
+
 Revision 1.40  2002/09/23 23:01:53  cvs
 
  - Fixed a bug in keypass()

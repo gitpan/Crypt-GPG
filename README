@@ -2,8 +2,8 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.38 $
-     $Date: 2002/09/21 21:48:47 $
+     $Revision: 1.1 $
+     $Date: 2002/10/19 16:14:20 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -251,7 +251,12 @@ BUGS
     * Methods may break if you don't use ASCII armoring.
 
 CHANGELOG
-      $Log: GPG.pm,v $ Revision 1.38 2002/09/21 21:48:47 cvs
+      $Log: README,v $
+      Revision 1.1  2002/10/19 16:14:20  cvs
+      Added README
+ Revision 1.40 2002/09/23 23:01:53 cvs
+
+       - Fixed a bug in keypass()
 
        - Documentation fixes.
 
