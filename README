@@ -1,0 +1,274 @@
+
+     * NAME
+     * VERSION
+     * SYNOPSIS
+     * DESCRIPTION
+     * CONSTRUCTOR
+     * DATA METHODS
+     * OBJECT METHODS
+     * BUGS
+     * AUTHOR
+     * ACKNOWLEDGEMENTS
+     * LICENSE
+     * DISCLAIMER
+     _________________________________________________________________
+
+                                     NAME
+
+   Crypt::GPG - An Object Oriented Interface to GnuPG.
+     _________________________________________________________________
+
+                                    VERSION
+
+ $Revision: 1.14 $
+ $Date: 2001/05/27 07:25:05 $
+     _________________________________________________________________
+
+                                   SYNOPSIS
+
+  use Crypt::GPG;
+ 
+  $gpg = new Crypt::GPG;
+
+  $gpg->gpgbin('/usr/bin/gpg');      # The GnuPG executable.
+  $gpg->secretkey('0x2B59D29E');     # Set ID of default secret key.
+  $gpg->passphrase('just testing');  # Set passphrase.
+
+  # Sign a message:
+
+  $sign = $gpg->sign('testing again');
+
+  # Encrypt a message:
+
+  $encrypted = $gpg->encrypt ('top secret', 'hash@netropolis.org');
+
+  # Decrypt / verify signature on a message, get message info:
+
+  ($sign, $plaintext) = $gpg->decrypt($encrypted);
+  @recipients = $gpg->msginfo($encrypted);
+
+  # Key generation:
+
+  $status = $gpg->keygen
+    ('Test', 'test@foo.com', 'DH', 2048, 0, 'test passphrase');
+  print while (<$status>); close $status;
+
+  # Key database manipulation:
+
+  $gpg->addkey(\@key);
+  @keys = $gpg->keydb(@ids);
+
+  # Key manipulation:
+  # (The methods below will likely be encapsulated into the
+  # Crypt::GPG::Key class in a future release, bewarned!)
+
+  $key = $keys[0];
+
+  $gpg->delkey($key);
+  $gpg->disablekey($key);
+  $gpg->enablekey($key);
+  $gpg->keypass($key, $oldpassphrase, $newpassphrase);
+  $keystring = $gpg->export($key);
+     _________________________________________________________________
+
+                                  DESCRIPTION
+
+   The Crypt::GPG module provides near complete access to GnuPG
+   functionality through an object oriented interface. It provides
+   methods for encryption, decryption, signing, signature verification,
+   key generation, key export and import, and most other key management
+   functions.
+
+   This module works almost identically to its cousin, Crypt::PGP5. The
+   two modules together provide a uniform interface to deal with both PGP
+   and GnuPG. Eventually, these modules will be folded into a single
+   module which will interface with GnuPG as well as all versions of PGP.
+     _________________________________________________________________
+
+                                  CONSTRUCTOR
+
+   new ()
+          Creates and returns a new Crypt::GPG object.
+     _________________________________________________________________
+
+                                 DATA METHODS
+
+   gpgbin ()
+          Sets the GPGBIN instance variable which gives the path to the
+          GnuPG binary.
+
+   gpgopts ()
+          Sets the GPGOPTS instance variable which may be used to pass
+          additional options to the GnuPG binary. For proper functioning
+          of this module, it is advisable to always include
+          '--lock-multiple' in the GPGOPTS string.
+
+   secretkey ()
+          Sets the SECRETKEY instance variable which may be a KeyID or a
+          username. This is the ID of the default key to use for signing.
+
+   passphrase ()
+          Sets the PASSPHRASE instance variable, required for signing and
+          decryption.
+
+   text ()
+          Sets the TEXT instance variable. If set to 1, GnuPG will use
+          network-compatible line endings for proper cross-platform
+          compatibility and the plaintext will gain a newline at the end,
+          if it does not already have one.
+
+   signfirst ()
+          Sets the SIGNFIRST instance variable. If set to 1, plaintext
+          will be signed before encryption. This is the way it should be
+          done, generally, unless you have good reason not to do it this
+          way.
+
+   armor ()
+          Sets the ARMOR instance variable. If set to 0, Crypt::GPG
+          doesn't ASCII armor its output. Else, it does. Default is to
+          use ascii-armoring. I haven't tested the methods in this module
+          without ASCII armoring yet.
+
+   detach ()
+          Sets the DETACH instance variable. If set to 1, the sign method
+          will produce detached signature certificates, else it won't.
+          The default is to produce detached signatures.
+
+   encryptsafe ()
+          Sets the ENCRYPTSAFE instance variable. If set to 1, encryption
+          will fail if trying to encrypt to a key which is not trusted.
+          This is the default. Switch to 0 if you want to encrypt to
+          untrusted keys.
+
+   version ()
+          Sets the VERSION instance variable which can be used to change
+          the Version: string on the GnuPG output to whatever you like.
+
+   comment ()
+          Sets the COMMENT instance variable which can be used to change
+          the Comment: string on the GnuPG output to whatever you like.
+
+   debug ()
+          Sets the DEBUG instance variable which causes the raw output of
+          Crypt::GPG's interaction with the GnuPG binary to be dumped to
+          STDOUT.
+     _________________________________________________________________
+
+                                OBJECT METHODS
+
+   sign (@message)
+          Signs @message with the secret key specified with secretkey ()
+          and returns the result as a string.
+
+   decrypt ( \@message, [ \@signature ])
+          Decrypts and/or verifies the message in @message, optionally
+          using the detached signature in @signature, and returns the
+          plaintext message as a string, along with a
+          Crypt::GPG::Signature object corresponding to the signature on
+          the message, if the message was signed.
+
+   msginfo (@ciphertext)
+          Returns a list of the recipient key IDs that @ciphertext is
+          encrypted to.
+
+   encrypt ($plaintext, $keylist [, -sign] [, -text] )
+          Encrypts $plaintext with the public keys of the recipients
+          listed in $keylist and returns the result in a string, or undef
+          if there was an error while processing. Returns undef if any of
+          the keys are not found.
+
+          Either $plaintext or $keylist may be specified as either an
+          arrayref or a simple scalar. If $plaintext is a an arrayref, it
+          will be join()ed without newlines.
+
+          If the -sign option is provided, the message will be signed
+          then encrypted.
+
+          If the -text option is specified, GnuPG will use
+          network-compatible line endings for proper cross-platform
+          compatibility. In this case, the plaintext will gain a newline
+          at the end, if it does not already have one.
+
+   addkey (\@key, $pretend)
+          Adds the keys given in @key to the user's key ring and returns
+          a list of Crypt::GPG::Key objects corresponding to the keys
+          that were added. If $pretend is true, it pretends to add the
+          key and creates the key object, but doesn't actually perform
+          the key addition.
+
+   export ($key)
+          Exports the key specified by the Crypt::GPG::Key object $key
+          and returns the result as a string.
+
+   keygen ($name, $email, $keytype, $keysize, $expire, $passphrase)
+          Creates a new keypair with the parameters specified. The only
+          supported $keytype is 'ELG-E'. $keysize can be any of 768,
+          1024, 2048, 3072 or 4096. Returns undef if there was an error,
+          otherwise returns a filehandle that reports the progress of the
+          key generation process similar to the way GnuPG does. The key
+          generation is not complete till you read an EOF from the
+          returned filehandle.
+
+   keydb (@keyids)
+          Returns an array of Crypt::GPG::Key objects corresponding to
+          the Key IDs listed in @keyids. This method used to be called
+          keyinfo and that is still an alias to this method.
+
+   parsekeys (@keylist)
+          Parses a raw GnuPG formatted key listing in @keylist and
+          returns an array of Crypt::GPG::Key objects.
+
+   keypass ($key, $oldpass, $newpass)
+          Change the passphrase for a key. Returns true if the passphrase
+          change succeeded, false if not, or undef if there was an error.
+
+   delkey ($keyid)
+          Deletes the key specified by the Crypt::GPG::Key object $key
+          from the user's key ring. Returns undef if there was an error,
+          or 1 if the key was successfully deleted.
+
+   disablekey ($keyid)
+          Disables the key specified by the Crypt::GPG::Key object $key.
+
+   enablekey ($keyid)
+          Enables the key specified by the Crypt::GPG::Key object $key.
+     _________________________________________________________________
+
+                                     BUGS
+
+     * Error checking needs work.
+
+     * Some key manipulation functions are missing.
+
+     * The method call interface is subject to change in future versions,
+       specifically, key manipulation methods will be encapsulated into
+       the Crypt::GPG::Key class in a future version.
+
+     * The current implementation will probably eat up all your RAM if
+       you try to operate on huge messages. This will be fixed soon.
+
+     * Methods may break if you don't use ASCII armoring.
+     _________________________________________________________________
+
+                                    AUTHOR
+
+   Crypt::GPG is Copyright (c) 2000-2001 Ashish Gulhati
+   <hash@netropolis.org>. All Rights Reserved.
+     _________________________________________________________________
+
+                               ACKNOWLEDGEMENTS
+
+   Thanks to Barkha for inspiration and lots of laughs, and to the GnuPG
+   team.
+     _________________________________________________________________
+
+                                    LICENSE
+
+   This code is free software; you can redistribute it and/or modify it
+   under the same terms as Perl itself.
+     _________________________________________________________________
+
+                                  DISCLAIMER
+
+   This is free software. If it breaks, you own both parts.
+
