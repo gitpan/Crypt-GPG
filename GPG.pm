@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # Crypt::GPG - An Object Oriented Interface to GnuPG.
-# Copyright (c) 2000-2005 Ashish Gulhati <crypt-gpg@neomailbox.com>
+# Copyright (c) 2000-2005 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.50 2005/02/10 12:32:51 cvs Exp $
+# $Id: GPG.pm,v 1.52 2005/02/23 09:12:54 cvs Exp $
 
 package Crypt::GPG;
 
@@ -22,7 +22,7 @@ use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.50 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.52 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -848,8 +848,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.50 $
- $Date: 2005/02/10 12:32:51 $
+ $Revision: 1.52 $
+ $Date: 2005/02/23 09:12:54 $
 
 =head1 SYNOPSIS
 
@@ -910,7 +910,7 @@ import. Key-server access is on the todo list.
 This release of the module may create compatibility issues with
 previous versions. If you find any such problems, or any bugs or
 documentation errors, please do report them to
-crypt-gpg@neomailbox.com.
+crypt-gpg at neomailbox.com.
 
 =head1 CONSTRUCTOR
 
@@ -1188,7 +1188,7 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
-Revision 1.50  2005/02/10 12:32:51  cvs
+Revision 1.52  2005/02/23 09:12:54  cvs
 
  - Overhauled to use IPC::Run instead of Expect.
 
@@ -1268,7 +1268,7 @@ Revision 1.29  2002/09/20 11:19:02  cvs
 =head1 AUTHOR
 
 Crypt::GPG is Copyright (c) 2000-2005 Ashish Gulhati
-<crypt-gpg@neomailbox.com>. All Rights Reserved.
+<crypt-gpg at neomailbox.com>. All Rights Reserved.
 
 =head1 ACKNOWLEDGEMENTS
 
@@ -1280,9 +1280,9 @@ who writes free software.
 This code is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-=head1 BUGS REPORTS, PATCHES AND FEATURE REQUESTS
+=head1 BUGS REPORTS, PATCHES, FEATURE REQUESTS
 
-Are very welcome. Email crypt-gpg@neomailbox.com.    
+Are very welcome. Email crypt-gpg at neomailbox.com.    
 
 =cut
 

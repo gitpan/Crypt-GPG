@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # keygen.t - Crypt::GPG key generation tests.
-# Copyright (c) 2005 Ashish Gulhati <crypt-gpg@neomailbox.com>
+# Copyright (c) 2005 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 01-keygen.t,v 1.5 2005/02/10 10:51:43 cvs Exp $
+# $Id: 01-keygen.t,v 1.6 2005/02/23 09:12:55 cvs Exp $
 
 use strict;
 use Test;
@@ -19,9 +19,10 @@ print STDERR <<__ENDMSG;
 
 
 NOTE: Key generation tests can take quite a long time. 
-      If the tests fail, you may need to generate more
-      randomness on your computer (by running a recursive 
-      directory listing in the background, for example).
+      If the tests fail, you may not have GPG installed.
+      Or you may need to generate more randomness on your 
+      computer (by running a recursive directory listing 
+      in the background, for example).
 
 __ENDMSG
 
@@ -32,7 +33,7 @@ $ENV{HOME} = $dir;
 # Create new Crypt::GPG object
 
 my $gpg = new Crypt::GPG;
-$gpg->delay(0.1);
+$ENV{GPGBIN} and $gpg->gpgbin($ENV{GPGBIN});
 $gpg->gpgopts('--compress-algo 1 --cipher-algo cast5 --force-v3-sigs --no-comment');
 $gpg->debug($debug);
 

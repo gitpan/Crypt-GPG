@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # keyops.t - Crypt::GPG key manipulation tests.
-# Copyright (c) 2005 Ashish Gulhati <crypt-gpg@neomailbox.com>
+# Copyright (c) 2005 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 06-keyops.t,v 1.2 2005/02/05 09:15:32 cvs Exp $
+# $Id: 06-keyops.t,v 1.2 2005/02/23 09:12:57 cvs Exp $
 
 use strict;
 use Test;
@@ -25,7 +25,7 @@ my @samplekeys; samplekeys();
 
 my @x;
 my $gpg = new Crypt::GPG;
-$gpg->delay(0.1);
+$ENV{GPGBIN} and $gpg->gpgbin($ENV{GPGBIN});
 $gpg->gpgopts('--compress-algo 1 --cipher-algo cast5 --force-v3-sigs --no-comment');
 $gpg->debug($debug);
 

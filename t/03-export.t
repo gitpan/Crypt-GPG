@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # export.t - Crypt::GPG key export tests.
-# Copyright (c) 2004 Ashish Gulhati <crypt-gpg@neomailbox.com>
+# Copyright (c) 2004 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 03-export.t,v 1.2 2005/02/10 10:51:43 cvs Exp $
+# $Id: 03-export.t,v 1.3 2005/02/23 09:12:56 cvs Exp $
 
 use strict;
 use Test;
@@ -22,7 +22,7 @@ $ENV{HOME} = $dir;
 # Create new Crypt::GPG object
 
 my $gpg = new Crypt::GPG;
-$gpg->delay(0.1);
+$ENV{GPGBIN} and $gpg->gpgbin($ENV{GPGBIN});
 $gpg->gpgopts('--compress-algo 1 --cipher-algo cast5 --force-v3-sigs --no-comment');
 $gpg->debug($debug);
 
