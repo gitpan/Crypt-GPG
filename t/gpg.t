@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: gpg.t,v 1.6 2001/11/12 22:11:01 cvs Exp $
+# $Id: gpg.t,v 1.7 2001/11/12 22:29:57 cvs Exp $
 
 use strict;
 use Test;

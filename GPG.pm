@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.26 2001/11/12 22:11:01 cvs Exp $
+# $Id: GPG.pm,v 1.27 2001/11/12 22:29:57 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,7 +20,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.26 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.27 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
@@ -477,8 +477,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.26 $
- $Date: 2001/11/12 22:11:01 $
+ $Revision: 1.27 $
+ $Date: 2001/11/12 22:29:57 $
 
 =head1 SYNOPSIS
 
