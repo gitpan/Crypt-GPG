@@ -17,25 +17,25 @@ BEGIN { plan tests => 52 }
 
 my $pgpcompat = 0; # Set to 1 to test PGP5 compatibility.
 
+print "Warning: These tests can take quite a while...\n";
+
 my ($gpg, $pgp, @x, @y, $pub, $sec);
 my ($gpgdebug, $pgpdebug) = (0,0);
 my $dir = $0 =~ /^\// ? $0 : $ENV{PWD} . '/' . $0; $dir =~ s/\/[^\/]*$//;
 $ENV{HOME} = $dir;
 
-print "Warning: These tests can take quite a while...\n\n";
-
 ok(sub {
-     $gpg = new Crypt::GPG;
+     if ($pgpcompat) {
+       eval { 
+	 require Crypt::PGP5;
+	 $pgp = new Crypt::PGP5;
+       };
+     }
+     $pgp or print "Crypt::PGP5 not available. Skipping PGP5 compatibility tests.\n";
    });
 
 ok(sub {
-     eval { if ($pgpcompat) {
-              use Crypt::PGP5;
-	      $pgp = new Crypt::PGP5;
-	    }
-	    $pgp or print "Warning: Skipping PGP 5 compatibility tests.\n";
-	  };
-     return 1;
+     $gpg = new Crypt::GPG;
    });
 
 ok(sub {
@@ -44,7 +44,7 @@ ok(sub {
    }, $gpgdebug);
 
 skip(!$pgp, sub {
-       $pgp->delay(0.1);
+       #$pgp->delay(0.1);
        $pgp->debug($pgpdebug);
      }, $pgpdebug);
 

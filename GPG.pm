@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.22 2001/11/10 15:27:56 cvs Exp $
+# $Id: GPG.pm,v 1.23 2001/11/10 20:36:31 cvs Exp $
 
 package Crypt::GPG;
 
@@ -20,7 +20,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.22 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.23 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
@@ -33,8 +33,8 @@ sub new {
 	  DETACH         =>   1,
 	  ENCRYPTSAFE    =>   1,
 	  TEXT           =>   1,
-	  SIGNFIRST      =>   0,
-	  SECRETKEY      =>   0,
+	  SIGNFIRST      =>   1,
+	  SECRETKEY      =>   '',
 	  DEBUG          =>   0,
 	  VKEYID         =>   '^.*$',
 	  VRCPT          =>   '^.*$',
@@ -471,8 +471,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.22 $
- $Date: 2001/11/10 15:27:56 $
+ $Revision: 1.23 $
+ $Date: 2001/11/10 20:36:31 $
 
 =head1 SYNOPSIS
 
@@ -586,7 +586,7 @@ does not already have one.
 
 =item B<signfirst($boolean)>
 
-Sets the B<SIGNFIRST> instance variable. If set to 1, plaintext will
+Sets the B<SIGNFIRST> instance variable. If set true 1, plaintext will
 be signed before encryption. This is the way it should be done,
 generally, unless you have good reason not to do it this way.
 
