@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.49 2005/02/10 09:30:47 cvs Exp $
+# $Id: GPG.pm,v 1.50 2005/02/10 12:32:51 cvs Exp $
 
 package Crypt::GPG;
 
@@ -22,7 +22,7 @@ use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.49 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.50 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -848,8 +848,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.49 $
- $Date: 2005/02/10 09:30:47 $
+ $Revision: 1.50 $
+ $Date: 2005/02/10 12:32:51 $
 
 =head1 SYNOPSIS
 
@@ -1187,7 +1187,8 @@ Methods may break if you don't use ASCII armoring.
 
 =over 2
 
-Revision 1.49  2005/02/10 09:30:47  cvs
+$Log: GPG.pm,v $
+Revision 1.50  2005/02/10 12:32:51  cvs
 
  - Overhauled to use IPC::Run instead of Expect.
 
@@ -1281,7 +1282,7 @@ under the same terms as Perl itself.
 
 =head1 BUGS REPORTS, PATCHES AND FEATURE REQUESTS
 
-Are very welcome. Email crypt-gpg@neomailbox.com.
+Are very welcome. Email crypt-gpg@neomailbox.com.    
 
 =cut
 

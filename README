@@ -8,8 +8,8 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.49 $
-     $Date: 2005/02/10 09:30:47 $
+     $Revision: 1.50 $
+     $Date: 2005/02/10 12:32:51 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -260,7 +260,7 @@ BUGS
     * Methods may break if you don't use ASCII armoring.
 
 CHANGELOG
-      Revision 1.49 2005/02/10 09:30:47 cvs
+      Revision 1.50 2005/02/10 12:32:51 cvs
 
        - Overhauled to use IPC::Run instead of Expect.
 
@@ -348,6 +348,5 @@ LICENSE
     under the same terms as Perl itself.
 
 BUGS REPORTS, PATCHES AND FEATURE REQUESTS
-
-Are very welcome. Email crypt-gpg@neomailbox.com.    
+    Are very welcome. Email crypt-gpg@neomailbox.com.
 
