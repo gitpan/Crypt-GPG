@@ -7,9 +7,11 @@ WriteMakefile (
 	       'ABSTRACT_FROM' =>  'GPG.pm',
 	       'VERSION_FROM'  =>  'GPG.pm',
 	       'PREREQ_PM'     =>  {
+				    'Carp'         =>  0,
 				    'Fcntl'        =>  0,
-				    'Expect'       =>  0,
-				    'POSIX'        =>  0,
+				    'Expect'       =>  '1.15',
+				    'File::Path'   =>  0,
+				    'File::Temp'   =>  0,
 				    'Date::Parse'  =>  0,
 				    'Time::HiRes'  =>  0,
 				   },

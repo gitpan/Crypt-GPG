@@ -1,13 +1,17 @@
-# $Id: TODO,v 1.3 2001/11/10 09:32:38 cvs Exp $
+# $Id: TODO,v 1.4 2002/09/21 22:03:10 cvs Exp $
 
-To Do:
+ - More tests.
 
-  - Use filehandles to pass plaintext / ciphertext.
-  - Avoid writing cleartext to tempfiles.
-  - Support for anonymous (--throw-keyid) encryption.
-  - Clean up all expect calls to run without a shell.
-  - Key server support.
-  - ADK detection, sanity testing before key import.
-  - Fix binary (non ascii-armored) operation.
-  - Update docs.
-  - More tests.
+ - Use filehandles to pass plaintext / ciphertext.
+
+ - Support for anonymous (--throw-keyid) encryption.
+
+ - Key server support.
+
+ - ADK detection, sanity testing before key import.
+
+ - Fix binary (non ascii-armored) operation.
+
+ - Crypt::GPG::Key methods.
+
+ - Update docs.
