@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
-# Crypt::GPG - A module for accessing GnuPG functionality.
+# Crypt::GPG - An Object Oriented Interface to GnuPG.
 # Copyright (c) 2000 Ashish Gulhati <hash@netropolis.org>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.8 2000/10/06 10:48:39 cvs Exp $
+# $Id: GPG.pm,v 1.13 2001/05/05 11:27:07 cvs Exp $
 
 package Crypt::GPG;
 
@@ -15,7 +15,7 @@ package Crypt::GPG;
 
 =head1 NAME 
 
-Crypt::GPG - A module for accessing GnuPG functionality.
+Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 SYNOPSIS
 
@@ -23,20 +23,24 @@ Crypt::GPG - A module for accessing GnuPG functionality.
   $gpg = new Crypt::GPG;
 
   $gpg->gpgbin ($path_to_gpg);     # The GnuPG executable.
-  $gpg->gpgopts ($option);         # Extra options for the GnuPG command.
   $gpg->secretkey ($keyid);        # Set ID of default secret key.
   $gpg->passphrase ($passphrase);  # Set passphrase.
-  $gpg->armor ($boolean);          # Switch ASCII armoring on/off.
-  $gpg->detach ($boolean);         # Switch detached signatures on/off.
-  $gpg->encryptsafe ($boolean);    # Switch paranoid encryption on/off.
   $gpg->version ($versionstring);  # Set version string.
   $gpg->comment ($commentstring);  # Set comment string.
+
+  $gpg->text ($boolean)            # Use --textmode option.
+  $gpg->signfirst ($boolean)       # When encrypting, use '--sign' option.
+  $gpg->encryptsafe ($boolean);    # Switch paranoid encryption on/off.
+  $gpg->armor ($boolean);          # Switch ASCII armoring on/off.
+  $gpg->detach ($boolean);         # Switch detached signatures on/off.
+  $gpg->gpgopts ($option);         # Extra options for the GnuPG command.
+
   $gpg->debug ($boolean);          # Switch debugging output on/off.
 
   $signed = $gpg->sign (@message);
   @recipients = $gpg->msginfo (@ciphertext);
   $ciphertext = $gpg->encrypt (\@plaintext, \@recipients);
-  ($signature, $plaintext) = $gpg->verify (\@ciphertext, [ \@message ]);
+  ($signature, $plaintext) = $gpg->decrypt (\@ciphertext, [ \@signature ]);
 
   $status = $gpg->keygen 
     ($name, $email, $keytype, $keysize, $expire, $passphrase);
@@ -62,15 +66,14 @@ key generation, key export and import, and most other key management
 functions. 
 
 This module works almost identically to its cousin, Crypt::PGP5. The
-two modules together provide an almost uniform interface to deal with
-both PGP and GPG. Eventually, these module will be folded into a
-single module which will interface with GPG as well as all versions of
-PGP.
+two modules together provide a uniform interface to deal with both PGP
+and GnuPG. Eventually, these modules will be folded into a single
+module which will interface with GnuPG as well as all versions of PGP.
 
 =cut
 
 use Carp;
-use 5.005;
+#use 5.004;
 use Fcntl;
 use Expect;
 use strict;
@@ -79,7 +82,7 @@ use POSIX qw( tmpnam );
 use Time::HiRes qw( sleep );
 use vars qw( $VERSION $AUTOLOAD );
 
-( $VERSION ) = '$Revision: 1.8 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.13 $' =~ /\s+([\d\.]+)/;
 
 =pod
 
@@ -98,14 +101,16 @@ Creates and returns a new Crypt::GPG object.
 sub new {
   bless { GPGBIN         =>   'gpg',
 	  GPGOPTS        =>   '--lock-multiple',
-	  PASSPHRASE     =>   0,
+	  VERSION        =>   "Version: Crypt::GPG v$VERSION\n",
+	  PASSPHRASE     =>   '',
+	  COMMENT        =>   '',
 	  ARMOR          =>   1,
 	  DETACH         =>   1,
 	  ENCRYPTSAFE    =>   1,
+	  TEXT           =>   1,
+	  SIGNFIRST      =>   0,
 	  SECRETKEY      =>   0,
 	  DEBUG          =>   1,
-	  VERSION        =>   "Version: Crypt::GPG v$VERSION\n",
-	  COMMENT        =>   ''
 	}, shift;
 }
 
@@ -136,6 +141,19 @@ username. This is the ID of the default key to use for signing.
 
 Sets the B<PASSPHRASE> instance variable, required for signing and
 decryption.
+
+=item B<text ()>
+
+Sets the B<TEXT> instance variable. If set to 1, GnuPG will use
+network-compatible line endings for proper cross-platform
+compatibility and the plaintext will gain a newline at the end, if it
+does not already have one.
+
+=item B<signfirst ()>
+
+Sets the B<SIGNFIRST> instance variable. If set to 1, plaintext will
+be signed before encryption. This is the way it should be done,
+generally, unless you have good reason not to do it this way.
 
 =item B<armor ()>
 
@@ -232,13 +250,13 @@ signed.
 
 sub decrypt {
   my $self = shift; my $tmpnam; my $tmpnam2; my $tmpnam3;
-  my $messageref = $_[1]?$_[0]:$_[1];
+  my $messageref = $_[0];
   do { $tmpnam = tmpnam() } until sysopen(FH, $tmpnam, O_RDWR|O_CREAT|O_EXCL);
   do { $tmpnam2 = tmpnam() } until sysopen(FH2, $tmpnam2, O_RDWR|O_CREAT|O_EXCL);
   my $message = join '', @{$messageref}; $message .= "\n" unless $message =~ /\n$/s;
   print FH $message; close FH;
   if ($_[1]) {
-    my $realmessage = join '', @{$_[0]};
+    my $realmessage = join '', @{$_[1]};
     do { $tmpnam3 = tmpnam() } until sysopen(FH3, $tmpnam3, O_RDWR|O_CREAT|O_EXCL);
     print FH3 $realmessage; close FH3;
   }
@@ -261,7 +279,7 @@ sub decrypt {
   $info =~ s/\r//sg;
   my $trusted = ($info !~ /WARNING: This key is not certified/s);
   my $unknown = ($info =~ /Can't check signature: public key not found/s);
-  my $message = join ('',<FH2>); close FH2; unlink $tmpnam2;
+  $message = join ('',<FH2>); close FH2; unlink $tmpnam2;
   return ($message) 
     unless $info =~ /.*Signature\ made\ ((?:\S+\s+){6})using\ \S+\ key\ ID\ (\S+)
 	             \s*gpg:\ (Good|BAD)\ signature\ from/sx;;
@@ -293,25 +311,47 @@ sub msginfo {
 
 =pod
 
-=item B<encrypt (\@plaintext, \@keylist)>
+=item B<encrypt ($plaintext, $keylist [, -sign] [, -text] )>
 
-Encrypts B<@plaintext> with the public keys of the recipients listed
-in B<@keylist> and returns the result in a string, or B<undef> if
+Encrypts B<$plaintext> with the public keys of the recipients listed
+in B<$keylist> and returns the result in a string, or B<undef> if
 there was an error while processing. Returns undef if any of the keys
 are not found.
+
+Either $plaintext or $keylist may be specified as either an arrayref 
+or a simple scalar.  If $plaintext is a an arrayref, it will be
+join()ed without newlines. 
+
+If the -sign option is provided, the message will be signed then 
+encrypted. 
+
+If the -text option is specified, GnuPG will use network-compatible
+line endings for proper cross-platform compatibility.  In this case,
+the plaintext will gain a newline at the end, if it does not already
+have one.
 
 =cut
 
 sub encrypt {
-  my $self = shift; my $info = ''; my $tmpnam; my ($msgref, $rcpref) = @_;
-  my $armor = "-a" if $self->{ARMOR}; my $rcpts = join ( ' ', map ("-r$_", @$rcpref) );
+  my $self = shift; my $info = ''; my $tmpnam; my ($message, $rcpts) = @_;
+  my $comment = "--comment '$self->{COMMENT}'";
+  my ($sign, $text); while( $#_ > 1 ) { 
+    my $parm = pop; 
+    $sign = $parm if $parm eq '-sign';
+    $text = $parm if $parm eq '-text';
+  }
+  $sign = '--sign' if $sign; $text = '--textmode' if $text;
+  my $armor = "-a" if $self->{ARMOR}; 
+  $rcpts = "-r $rcpts" 				unless 	ref($rcpts) eq 'ARRAY';
+  $rcpts = join ( ' ', map ("-r$_", @$rcpts) )	if 	ref($rcpts) eq 'ARRAY';
   do { $tmpnam = tmpnam() } until sysopen(FH, $tmpnam, O_RDWR|O_CREAT|O_EXCL);
-  my $message = join ('', @$msgref); $message .= "\n" unless $message =~ /\n$/s; 
+  $message = join ('', @$message) if (ref $message eq 'ARRAY' ); 
+  $message .= "\n" if( $text && $message !~ /\n$/s ); 
   print FH $message; close FH;
-  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} -o- --encrypt $armor $rcpts $tmpnam"); 
+  my $expect = Expect->spawn ("$self->{GPGBIN} $self->{GPGOPTS} $comment -o- --encrypt $sign $armor $rcpts $tmpnam"); 
   $expect->log_stdout($self->{DEBUG});
   while (1) {
-    $expect->expect (undef, '-----BEGIN PGP', 'Use this key anyway?', 'key not found');
+    $expect->expect (undef, '-re', '-----BEGIN PGP', 'Use this key anyway?', 'key not found');
     if ($expect->exp_match_number==2) {
       sleep (0.2);
       if ($self->{ENCRYPTSAFE}) {
@@ -333,9 +373,8 @@ sub encrypt {
   }
   sleep (0.2); $expect->expect (undef);
   $info .= $expect->exp_before(); $info =~ s/.*\n(-----BEGIN)/$1/s;
-  unlink $tmpnam;
   $info =~ s/\r//sg; $info =~ s/^Version:.*\n/$self->{VERSION}/m; 
-  $info =~ s/^Comment:.*\n/$self->{COMMENT}/m;
+  unlink $tmpnam;
   return $info;
 }
 
@@ -663,17 +702,13 @@ Crypt::GPG is Copyright (c) 2000 Ashish Gulhati
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanks to Barkha for inspiration and lots of laughs; to the GnuPG team
-and Phil Zimmerman; and of-course, to Larry Wall, Richard Stallman,
-and Linus Torvalds.
+Thanks to Barkha for inspiration and lots of laughs, and to the GnuPG
+team.
 
 =head1 LICENSE
 
 This code is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
-
-It would be nice if you would mail your patches to me, and I would
-love to hear about projects that make use of this module.
 
 =head1 DISCLAIMER
 
