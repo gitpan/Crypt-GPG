@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.39 2002/09/22 09:23:13 cvs Exp $
+# $Id: GPG.pm,v 1.40 2002/09/23 23:01:53 cvs Exp $
 
 package Crypt::GPG;
 
@@ -22,17 +22,17 @@ use File::Temp qw( tempfile tempdir );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::HIGH );
-( $VERSION ) = '$Revision: 1.39 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.40 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   'gpg',
 	  FORCEDOPTS     =>   '--no-secmem-warning',
 	  GPGOPTS        =>   '--lock-once --compress-algo 1 ' .
 	                      '--cipher-algo cast5 --force-v3-sigs',
-	  VERSION        =>   "Version: Crypt::GPG v$VERSION\n",
+	  VERSION        =>   $VERSION,
 	  DELAY          =>   0,
 	  PASSPHRASE     =>   '',
-	  COMMENT        =>   "Crypt::GPG v$VERSION\n",
+	  COMMENT        =>   "Crypt::GPG v$VERSION",
 	  ARMOR          =>   1,
 	  DETACH         =>   1,
 	  ENCRYPTSAFE    =>   1,
@@ -559,8 +559,8 @@ sub keypass {
     }
   }
   $self->doze(); print $expect ("$newpass\r"); 
-  $expect->expect (undef, 'phrase: '); $self->doze(); 
-  print $expect ("$newpass\r"); 
+  $expect->expect (undef, 'Repeat passphrase: '); 
+  $self->doze(); print $expect ("$newpass\r"); 
   $expect->expect (undef, 'really want to do this?', 'Command>'); 
   if ($expect->exp_match_number == 1) {
     $self->doze(); print $expect "y\r";
@@ -791,8 +791,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.39 $
- $Date: 2002/09/22 09:23:13 $
+ $Revision: 1.40 $
+ $Date: 2002/09/23 23:01:53 $
 
 =head1 SYNOPSIS
 
@@ -1115,7 +1115,9 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
-Revision 1.39  2002/09/22 09:23:13  cvs
+Revision 1.40  2002/09/23 23:01:53  cvs
+
+ - Fixed a bug in keypass()
 
  - Documentation fixes.
 

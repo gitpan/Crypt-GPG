@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: gpg.t,v 1.13 2002/09/22 09:22:38 cvs Exp $
+# $Id: gpg.t,v 1.14 2002/09/23 23:00:52 cvs Exp $
 
 use strict;
 use Test;
@@ -41,7 +41,7 @@ ok(sub {
 #2
 ok(sub {
      $gpg = new Crypt::GPG;
-#     $gpg->delay(0.2);
+     $gpg->delay(0.1);
    });
 
 #3
