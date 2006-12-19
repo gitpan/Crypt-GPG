@@ -7,13 +7,13 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 06-keyops.t,v 1.2 2005/02/23 09:12:57 cvs Exp $
+# $Id: 06-keyops.t,v 1.4 2006/12/19 12:52:00 ashish Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 45 }
+BEGIN { plan tests => 30 }
 
 my $debug = 0;
 my $dir = $0 =~ /^\// ? $0 : $ENV{PWD} . '/' . $0; $dir =~ s/\/[^\/]*$//;
@@ -36,7 +36,7 @@ for my $x (@samplekeys) {
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(768 1024 2048) {
+for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
     my @mykeys = $gpg->keyinfo("A $bits $type");

@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.52 2005/02/23 09:12:54 cvs Exp $
+# $Id: GPG.pm,v 1.59 2006/12/19 12:51:54 ashish Exp $
 
 package Crypt::GPG;
 
@@ -22,7 +22,7 @@ use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.52 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.59 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -62,8 +62,8 @@ sub sign {
   return unless $self->{SECRETKEY} =~ /$self->{VKEYID}/ 
     and $self->{PASSPHRASE} =~ /$self->{VPASSPHRASE}/;
 
-  my $detach    = '-b' if $self->{DETACH}; 
-  my $armor     = '-a' if $self->{ARMOR}; 
+  my $detach    = '-b' if $self->detach; 
+  my $armor     = '-a' if $self->armor; 
   my @extras    = grep { $_ } ($detach, $armor);
 
   my @secretkey = ('--default-key', ref($self->{SECRETKEY})?$self->{SECRETKEY}->{ID}:$self->{SECRETKEY});
@@ -73,26 +73,27 @@ sub sign {
 	      SUFFIX => $self->{TMPSUFFIX}, UNLINK => 1);
 
   my $message = join ('', @_); 
-  $message .= "\n" unless $message =~ /\n$/s;
-  $message =~ s/\n/\r\n/sg;
+#  $message .= "\n" unless $message =~ /\n$/s;
+  $message =~ s/(?<!\r)\n/\r\n/sg;
   print $tmpfh $message; close $tmpfh; 
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
   push (@opts, ('--comment', $self->{COMMENT})) if $self->{COMMENT};
+  my $signhow = $self->clearsign ? '--clearsign' : '--sign';
   local $SIG{CHLD} = 'IGNORE';
 
   my ($in, $out, $err, $in_q, $out_q, $err_q);
-  my $h = start ([$self->{GPGBIN}, @opts, @secretkey,'--no-tty', '--status-fd', '1', '--command-fd', 
-		  0, '-o-', '--sign', @extras, $tmpnam], \$in, \$out, \$err, timeout( 30 ));
+  my $h = start ([$self->{GPGBIN}, @opts, @secretkey,'--no-tty', '--status-fd', '2', '--command-fd', 
+		  0, '-o-', $signhow, @extras, $tmpnam], \$in, \$out, \$err, timeout( 30 ));
   my $skip = 1; my $i = 0;
   local $SIG{CHLD} = 'IGNORE';
   local $SIG{PIPE} = 'IGNORE';
   while ($skip) {
-    pump $h until ($out =~ /NEED_PASSPHRASE (.{16}) (.{16}).*\n/g or
-		   $out =~ /GOOD_PASSPHRASE/g);
+    pump $h until ($err =~ /NEED_PASSPHRASE (.{16}) (.{16}).*\n/g or
+		   $err =~ /GOOD_PASSPHRASE/g);
     if ($2) {
       $in .= "$self->{PASSPHRASE}\n";
-      pump $h until $out =~ /(GOOD|BAD)_PASSPHRASE/g;
+      pump $h until $err =~ /(GOOD|BAD)_PASSPHRASE/g;
       if ($1 eq 'GOOD') {
 	$skip = 0;
       }
@@ -108,7 +109,11 @@ sub sign {
   finish $h;
  
   my $info;
-  if ($detach) {
+  if ($self->clearsign) {
+    $out =~ /(-----BEGIN PGP SIGNED MESSAGE-----.*-----END PGP SIGNATURE-----)/s;
+    $info = $1;
+  }
+  elsif ($detach) {
     $out =~ /(-----BEGIN PGP SIGNATURE-----.*-----END PGP SIGNATURE-----)/s;
     $info = $1;
   }
@@ -130,7 +135,7 @@ sub verify {
   return unless $self->{PASSPHRASE} =~ /$self->{VPASSPHRASE}/;
 
   my ($tf, $ts, $td) = ($self->{TMPFILES}, $self->{TMPSUFFIX}, $self->{TMPDIR});
-  my ($tmpfh, $tmpnam) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
+  my ($tmpfh, $tmpnam) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 0);
   my ($tmpfh2, $tmpnam2) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
 
   my $ciphertext = ref($_[0]) ? join '', @{$_[0]} : $_[0];
@@ -146,11 +151,14 @@ sub verify {
 
   my $x;
   if ($_[1]) {
-    my $signature = ref($_[1]) ? join '', @{$_[1]} : $_[1];
-    ($tmpfh3, $tmpnam3) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 1);
-    print $tmpfh3 $signature; close $tmpfh3;
-    my $y = "$self->{GPGBIN} @opts --marginals-needed $self->{MARGINALS} --status-fd 1 --command-fd 0 --no-tty --verify $tmpnam $tmpnam3";
+    my $message = ref($_[1]) ? join '', @{$_[1]} : $_[1];
+#    $message .= "\n" unless $message =~ /\n$/s;
+    $message =~ s/(?<!\r)\n/\r\n/sg;
+    ($tmpfh3, $tmpnam3) = tempfile ($tf, DIR => $td, SUFFIX => $ts, UNLINK => 0);
+    print $tmpfh3 $message; close $tmpfh3;
+    my $y = "$self->{GPGBIN} @opts --marginals-needed $self->{MARGINALS} --status-fd 1 --logger-fd 1 --command-fd 0 --no-tty --verify $tmpnam $tmpnam3";
     $x = `$y`;
+    print "FOO: $y\n$x\n";
   }
 
   else {
@@ -161,6 +169,8 @@ sub verify {
 		   \$in, \$out, \$err, timeout( 30 ));
 
     my $success = 0;
+    my $seckey = (ref($self->{SECRETKEY})?$self->{SECRETKEY}->{ID}:$self->{SECRETKEY});
+
     while (1) {
       pump $h until ($out =~ /NEED_PASSPHRASE (.{16}) (.{16}).*\n/g
 		     or $out =~ /(GOOD_PASSPHRASE)/g
@@ -173,7 +183,7 @@ sub verify {
 	last;
       }
       elsif ($2) {
-	if ($2 eq $self->{SECRETKEY}->{ID}) {
+	if ($2 eq $seckey) {
 	  $in .= "$self->{PASSPHRASE}\n";
 	  pump $h until $out =~ /(GOOD|BAD)_PASSPHRASE/g;
 	  if ($1 eq 'GOOD') {
@@ -207,15 +217,21 @@ sub verify {
   # [GNUPG:] GOODSIG 48196CF147A781BD A 768 ELG-E <768ELG-E@test.com>
   # [GNUPG:] VALIDSIG 186D893EFEC3AF2F660CA2F548196CF147A781BD 2005-02-05 1107574559 0 3 0 17 2 00 186D893EFEC3AF2F660CA2F548196CF147A781BD
   # [GNUPG:] TRUST_ULTIMATE
+ 
+  # gpg: Signature made Fri Dec 16 16:46:03 2005 CET using DSA key ID 8FDA2BFB
+  # [GNUPG:] BADSIG C051B1598FDA2BFB Ashish Test <test@ashish.neomailbox.net>
+  # gpg: BAD signature from "Ashish Test <test@ashish.neomailbox.net>"
 
   my $plaintext = join ('',<$tmpfh2>) || ''; 
   close $tmpfh2; unlink ($tmpnam2);
 
   return ($plaintext) 
-    unless $x =~ /SIG_ID/s;
+    unless $x =~ /(GOOD|BAD)SIG/s;
 
   my @signatures;
-  $x =~ /SIG_ID \S+ (\S+ \S+).*(GOOD|BAD)SIG (\S{16}).*TRUST_(\S+)/sg;
+#  $x =~ /SIG_ID \S+ (\S+ \S+).*(GOOD|BAD)SIG (\S{16}).*TRUST_(\S+)/sg;
+  $x =~ /Signature made (\S+ \S+ \S+ \S+ \S+ \S+).*(GOOD|BAD)SIG (\S{16}).*(TRUST_(\S+))?/sg;
+
   my $signature = {'Validity' => $2, 'KeyID' => $3, 
 		   'Time' => $1, 'Trusted' => $4};
   $signature->{Time} = str2time ($signature->{Time}); 
@@ -701,34 +717,37 @@ sub certify {
   $out = '';
   $in .= $local ? "lsign\n" : "sign\n"; 
 
-  pump $h until ($out =~ /(s)ign_uid\.class/g
-		 or $out =~ /keyedit\.prompt/g);
-  my $fix = $1;
+  pump $h until ($out =~ /sign_uid\.okay/g
+		 or $out =~ /(s)ign_uid\.class/g
+		 or $out =~ /(s)(i)gn_uid\.expire/g);
+
+  if ($2) {
+    $out = ''; $in .= "0\n";
+    pump $h until ($out =~ /sign_uid\.okay/g
+		   or $out =~ /(s)ign_uid\.class/g
+		   or $out =~ /passphrase\.enter/g);
+  }
+
+  if ($1) {
+    $out = ''; $in .= "$class\n";
+    pump $h until ($out =~ /sign_uid\.okay/g); 
+  }
+
+  $^W = 0; /()/; $^W = 1; $out = ''; $in .= "Y\n"; 
+  pump $h until ($out =~ /passphrase\.enter/g
+		 or $out =~ /(keyedit.prompt)/g);
+  $ret=1;
   unless ($1) {
-    $out = ''; $in .= "\n";
-    pump $h until ($out =~ /(s)ign_uid\.class/g
-		 or $out =~ /keyedit\.prompt/g);
-    $fix = $1;
+    $out = ''; $^W = 0; /()/; $^W = 1; $in .= "$self->{PASSPHRASE}\n"; 
+    pump $h until ($out =~ /keyedit\.prompt/g
+		   or $out =~ /(BAD_PASSPHRASE)/g);
+    $ret=0 if $1;
   }
-  
-  if ($fix) {
-    $in .= "$class\n";
-    pump $h until ($out =~ /sign_uid\.okay/g);
-    $^W = 0; /()/; $^W = 1; $out = ''; $in .= "Y\n"; 
-    pump $h until ($out =~ /passphrase\.enter/g
-		   or $out =~ /(keyedit.prompt)/g);
-    $ret=1;
-    unless ($1) {
-      $out = ''; $^W = 0; /()/; $^W = 1; $in .= "$self->{PASSPHRASE}\n"; 
-      pump $h until ($out =~ /keyedit\.prompt/g
-		     or $out =~ /(BAD_PASSPHRASE)/g);
-      $ret=0 if $1;
-    }
-  }
+
   $in .= "quit\n";
   if ($ret) {
     pump $h until ($out =~ /save\.okay/g or $out =~ /(k)eyedit\.prompt/g);
-    $in .= "Y\n" unless $1;
+    $in .= "Y\n";
   }
   finish $h;
   $ret;  
@@ -811,7 +830,7 @@ sub AUTOLOAD {
   my $self = shift; (my $auto = $AUTOLOAD) =~ s/.*:://;
 #  warn "FOO $auto $_[0]\n";
   if ($auto =~ /^(passphrase|secretkey|armor|gpgbin|gpgopts|delay|marginals|
-                  detach|encryptsafe|version|comment|debug|tmpdir)$/x) {
+                  detach|clearsign|encryptsafe|version|comment|debug|tmpdir)$/x) {
     return $self->{"\U$auto"} unless defined $_[0];
     $self->{"\U$auto"} = shift;
   }
@@ -848,8 +867,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.52 $
- $Date: 2005/02/23 09:12:54 $
+ $Revision: 1.59 $
+ $Date: 2006/12/19 12:51:54 $
 
 =head1 SYNOPSIS
 
@@ -1022,11 +1041,11 @@ element of the list.
 The Crypt::GPG::Signature object can be queried with the following
 methods:
 
-   $sig->validity();    # 'Good', 'BAD', or 'Unknown'
+   $sig->validity();    # 'GOOD', 'BAD', or 'UNKNOWN'
    $sig->keyid();       # ID of signing key
    $sig->time();        # Time the signature was made
-   $sig->trusted();     # True or false depending on whether 
-                          the signing key is trusted
+   $sig->trusted();     # Signature trust level
+
 
 =item B<msginfo(@ciphertext)>
 
@@ -1076,7 +1095,7 @@ returns the result as a string.
 
 Creates a new keypair with the parameters specified. The only
 supported B<$keytype> currently is 'ELG-E'. B<$keysize> can be any of
-768, 1024, 2048, 3072 or 4096. Returns undef if there was an error,
+1024, 2048, 3072 or 4096. Returns undef if there was an error,
 otherwise returns a filehandle that reports the progress of the key
 generation process similar to the way GnuPG does. The key generation
 is not complete till you read an EOF from the returned filehandle.
@@ -1188,7 +1207,24 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
-Revision 1.52  2005/02/23 09:12:54  cvs
+
+Revision 1.59  2006/12/19 12:51:54  ashish
+
+  - Documentation fixes.
+
+  - Removed tests for obsolete 768 bit keys.
+
+  - Bugfixes.
+
+  - Tested with gpg 1.4.6.
+
+Revision 1.57  2005/12/15 17:09:17  ashish
+
+  - Fixed bug in decrypt
+
+  - Fixed small key certification bugs.
+
+Revision 1.50  2005/02/10 12:32:51  cvs
 
  - Overhauled to use IPC::Run instead of Expect.
 
@@ -1272,7 +1308,7 @@ Crypt::GPG is Copyright (c) 2000-2005 Ashish Gulhati
 
 =head1 ACKNOWLEDGEMENTS
 
-Thanks to Barkha, my sunshine. And to the GnuPG team and everyone
+Thanks to Barkha, for inspiration; to the GnuPG team; and to everyone
 who writes free software.
 
 =head1 LICENSE

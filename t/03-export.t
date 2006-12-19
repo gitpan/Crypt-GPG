@@ -7,13 +7,13 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 03-export.t,v 1.3 2005/02/23 09:12:56 cvs Exp $
+# $Id: 03-export.t,v 1.5 2006/12/19 12:51:59 ashish Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 15 }
+BEGIN { plan tests => 10 }
 
 my $debug = 0;
 my $dir = $0 =~ /^\// ? $0 : $ENV{PWD} . '/' . $0; $dir =~ s/\/[^\/]*$//;
@@ -28,7 +28,7 @@ $gpg->debug($debug);
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(768 1024 2048) {
+for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
     # Export our public key

@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 # the contents of the Makefile that is written.
 WriteMakefile (
 	       'NAME'	      =>   'Crypt::GPG',
-	       'AUTHOR'        =>  'Ashish Gulhati <hash@netropolis.org>',
+	       'AUTHOR'        =>  'Ashish Gulhati <crypt-gpg@neomailbox.com>',
 	       'ABSTRACT_FROM' =>  'GPG.pm',
 	       'VERSION_FROM'  =>  'GPG.pm',
 	       'PREREQ_PM'     =>  {

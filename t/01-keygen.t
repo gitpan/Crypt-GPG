@@ -7,13 +7,13 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 01-keygen.t,v 1.6 2005/02/23 09:12:55 cvs Exp $
+# $Id: 01-keygen.t,v 1.8 2006/12/19 12:51:59 ashish Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 3 }
+BEGIN { plan tests => 2 }
 
 print STDERR <<__ENDMSG;
 
@@ -39,7 +39,7 @@ $gpg->debug($debug);
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(768 1024 2048) {
+for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
     # Generate key pair

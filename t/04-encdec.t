@@ -7,13 +7,13 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 04-encdec.t,v 1.5 2005/02/23 09:12:56 cvs Exp $
+# $Id: 04-encdec.t,v 1.7 2006/12/19 12:51:59 ashish Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 15 }
+BEGIN { plan tests => 10 }
 
 my $debug = 0;
 my $dir = $0 =~ /^\// ? $0 : $ENV{PWD} . '/' . $0; $dir =~ s/\/[^\/]*$//;
@@ -29,7 +29,7 @@ $gpg->debug($debug);
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(768 1024 2048) {
+for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
     my ($secretkey) = grep { $_->{Type} =~ /^sec[^\@]?/ } $gpg->keyinfo("A $bits $type");
@@ -55,9 +55,9 @@ for my $bits qw(768 1024 2048) {
       # Decrypt
       #########
       ok(sub {
-	   $gpg->passphrase("$bits Bit $type Test Key") unless $nopass;
+	   $gpg->passphrase($nopass ? '' : "$bits Bit $type Test Key");
 	   my ($clear) = $gpg->decrypt(@x);
-	   $clear eq "Test\n";
+	   defined $clear and $clear eq "Test\n";
 	 });
     }
 

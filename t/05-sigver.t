@@ -7,13 +7,13 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 05-sigver.t,v 1.4 2005/02/23 09:12:57 cvs Exp $
+# $Id: 05-sigver.t,v 1.6 2006/12/19 12:52:00 ashish Exp $
 
 use strict;
 use Test;
 use Crypt::GPG;
 
-BEGIN { plan tests => 48 }
+BEGIN { plan tests => 32 }
 
 my $debug = 0;
 my $dir = $0 =~ /^\// ? $0 : $ENV{PWD} . '/' . $0; $dir =~ s/\/[^\/]*$//;
@@ -29,7 +29,7 @@ $gpg->debug($debug);
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(768 1024 2048) {
+for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
     my ($secretkey) = grep { $_->{Type} =~ /^sec[^\@]?/ } $gpg->keyinfo("A $bits $type");
@@ -76,7 +76,7 @@ for my $bits qw(768 1024 2048) {
       ok(sub {
 	   $gpg->secretkey($secretkey);
 	   my ($clear, $sign) = $gpg->decrypt(@xs);
-	   $clear eq "Test\n" 
+	   defined $clear and $clear eq "Test\n" 
 	     and ref($sign) eq 'Crypt::GPG::Signature';
 	 });
 
