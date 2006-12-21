@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # import.t - Crypt::GPG key import tests.
-# Copyright (c) 2004 Ashish Gulhati <crypt-gpg at neomailbox.com>
+# Copyright (c) 2005-2006 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 02-import.t,v 1.3 2005/02/23 09:12:55 cvs Exp $
+# $Id: 02-import.t,v 1.4 2006/12/21 12:36:35 ashish Exp $
 
 use strict;
 use Test;
@@ -23,6 +23,9 @@ $ENV{HOME} = $dir;
 
 my $gpg = new Crypt::GPG;
 $ENV{GPGBIN} and $gpg->gpgbin($ENV{GPGBIN});
+
+my $nogpg = 1 unless (-e $gpg->gpgbin);
+
 $gpg->gpgopts('--compress-algo 1 --cipher-algo cast5 --force-v3-sigs --no-comment');
 $gpg->debug($debug);
 
@@ -30,15 +33,15 @@ my @samplekeys; samplekeys();
 
 # Import sample keys
 ####################
-ok(
-   sub {
-     for my $x (@samplekeys) {
-       my ($imported) = $gpg->addkey($x->{Key});
-       return 0 unless $imported->{ID} eq $x->{ID};
+skip($nogpg,
+     sub {
+       for my $x (@samplekeys) {
+	 my ($imported) = $gpg->addkey($x->{Key});
+	 return 0 unless $imported->{ID} eq $x->{ID};
+       }
+       1;
      }
-     1;
-   }
-  );
+    );
 
 sub samplekeys {
   push (@samplekeys, {'ID' => 'D354E162BCA6DBD1',

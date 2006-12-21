@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.59 2006/12/19 12:51:54 ashish Exp $
+# $Id: GPG.pm,v 1.61 2006/12/21 12:36:28 ashish Exp $
 
 package Crypt::GPG;
 
@@ -16,13 +16,14 @@ use Fcntl;
 use strict;
 use English; 
 use File::Path;
+use File::Spec ();
 use Date::Parse;
 use File::Temp qw( tempfile tempdir );
 use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.59 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.61 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -42,7 +43,7 @@ sub new {
 	  DEBUG          =>   0,
 	  TMPFILES       =>   'fileXXXXXX',
 	  TMPDIRS        =>   'dirXXXXXX',
-	  TMPDIR         =>   '/tmp',
+	  TMPDIR         =>   File::Spec->tmpdir(),
 	  TMPSUFFIX      =>   '.dat',
 	  VKEYID         =>   '^.+$',
 	  VRCPT          =>   '^.*$',
@@ -867,8 +868,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.59 $
- $Date: 2006/12/19 12:51:54 $
+ $Revision: 1.61 $
+ $Date: 2006/12/21 12:36:28 $
 
 =head1 SYNOPSIS
 
@@ -1207,6 +1208,12 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
+
+Revision 1.61  2006/12/21 12:36:28  ashish
+
+  - Skip tests if gpg not found.
+
+  - Use File::Spec to determine tmpdir. Suggested by Craig Manley.
 
 Revision 1.59  2006/12/19 12:51:54  ashish
 

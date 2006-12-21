@@ -2,8 +2,8 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.59 $
-     $Date: 2006/12/19 12:51:54 $
+     $Revision: 1.61 $
+     $Date: 2006/12/21 12:36:28 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -254,6 +254,12 @@ BUGS
 
 CHANGELOG
       $Log: GPG.pm,v $
+
+      Revision 1.61 2006/12/21 12:36:28 ashish
+
+        - Skip tests if gpg not found.
+
+        - Use File::Spec to determine tmpdir. Suggested by Craig Manley.
 
       Revision 1.59 2006/12/19 12:51:54 ashish
 

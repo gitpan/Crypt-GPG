@@ -1,13 +1,13 @@
 # -*-cperl-*-
 #
 # keyops.t - Crypt::GPG key manipulation tests.
-# Copyright (c) 2005 Ashish Gulhati <crypt-gpg at neomailbox.com>
+# Copyright (c) 2005-2006 Ashish Gulhati <crypt-gpg at neomailbox.com>
 #
 # All rights reserved. This code is free software; you can
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: 06-keyops.t,v 1.4 2006/12/19 12:52:00 ashish Exp $
+# $Id: 06-keyops.t,v 1.5 2006/12/21 12:36:35 ashish Exp $
 
 use strict;
 use Test;
@@ -26,12 +26,17 @@ my @samplekeys; samplekeys();
 my @x;
 my $gpg = new Crypt::GPG;
 $ENV{GPGBIN} and $gpg->gpgbin($ENV{GPGBIN});
+
+my $nogpg = 1 unless (-e $gpg->gpgbin);
+
 $gpg->gpgopts('--compress-algo 1 --cipher-algo cast5 --force-v3-sigs --no-comment');
 $gpg->debug($debug);
 
-for my $x (@samplekeys) {
-  my ($imported) = $gpg->addkey($x->{Key});
-  return 0 unless $imported->{ID} eq $x->{ID};
+unless ($nogpg) {
+  for my $x (@samplekeys) {
+    my ($imported) = $gpg->addkey($x->{Key});
+    return 0 unless $imported->{ID} eq $x->{ID};
+  }
 }
 
 # Start test loop with different key sizes/types
@@ -39,19 +44,20 @@ for my $x (@samplekeys) {
 for my $bits qw(1024 2048) {
   for my $type ('ELG-E') {
 
-    my @mykeys = $gpg->keyinfo("A $bits $type");
+    my @mykeys; @mykeys = $gpg->keyinfo("A $bits $type") unless $nogpg;
     my ($publickey) = grep { $_->{Type} =~ /^pub[^\@]?/ } @mykeys;
     my ($secretkey) = grep { $_->{Type} =~ /^sec[^\@]?/ } @mykeys;
     $gpg->secretkey($secretkey->{ID});
-
+    
     for my $nopass (0,1) {
       if ($nopass) {
 	# Blank out the Key password and do another round of tests
         ##########################################################
-	ok(sub {
-	     $gpg->passphrase('');
-	     $gpg->keypass($secretkey, "$bits Bit $type Test Key", '');
-	   });
+	skip($nogpg,
+	     sub {
+	       $gpg->passphrase('');
+	       $gpg->keypass($secretkey, "$bits Bit $type Test Key", '');
+	     });
       }
       
       $gpg->passphrase("$bits Bit $type Test Key") unless $nopass;
@@ -61,57 +67,64 @@ for my $bits qw(1024 2048) {
       ###################################
       #! Test check for already signed.
       #! Test check for UID out of range. It's broken.
-      ok(sub {
-	   for my $x (@samplekeys) {
-	     return unless $gpg->certify($x->{ID}, 1, 0, 0);
-	   }
-	   1;
-	 });
-
+      skip($nogpg,
+	   sub {
+	     for my $x (@samplekeys) {
+	       return unless $gpg->certify($x->{ID}, 1, 0, 0);
+	     }
+	     1;
+	   });
+      
       # Sign all sample public keys
       #############################
-      ok(sub {
-	   for my $x (@samplekeys) {
-	     return unless $gpg->certify($x->{ID}, 0, 0, 0);
-	   }
-	   1;
-	 });
-
+      skip($nogpg,
+	   sub {
+	     for my $x (@samplekeys) {
+	       return unless $gpg->certify($x->{ID}, 0, 0, 0);
+	     }
+	     1;
+	   });
+      
       #! Verify key signatures
       ########################
       skip(sub {1});
 
       # Change key trust
       ##################
-      ok(sub {
-	   $gpg->keytrust($publickey, 3);
-	 });
-
+      skip($nogpg,
+	   sub {
+	     $gpg->keytrust($publickey, 3);
+	   });
+      
       # Disable key
       #############
-      ok(sub {
-	   $gpg->disablekey($publickey);
-	 });
-
+      skip($nogpg,
+	   sub {
+	     $gpg->disablekey($publickey);
+	   });
+      
       # Enable key
       ############
-      ok(sub {
-	   $gpg->enablekey($publickey);
-	 });
-
+      skip($nogpg,
+	   sub {
+	     $gpg->enablekey($publickey);
+	   });
+      
     }
 
     # Set passphrase back to original
     #################################
-    ok(sub {
-	 $gpg->keypass($secretkey, '', "$bits Bit $type Test Key");
-       });
-
+    skip($nogpg,
+	 sub {
+	   $gpg->keypass($secretkey, '', "$bits Bit $type Test Key");
+	 });
+    
     # Delete GPG key pair
     #####################
-    ok(sub {
-	 $gpg->delkey($secretkey);
-       });
+    skip($nogpg,
+	 sub {
+	   $gpg->delkey($secretkey);
+	 });
   }
 }
 
