@@ -2,8 +2,8 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.61 $
-     $Date: 2006/12/21 12:36:28 $
+     $Revision: 1.62 $
+     $Date: 2007/03/31 11:28:12 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -255,6 +255,22 @@ BUGS
 CHANGELOG
       $Log: GPG.pm,v $
 
+      Revision 1.62 2007/03/31 11:28:12 ashish
+
+        - Fixed debug()
+
+        - Fixed regex for signature line
+
+        - Non-forking version of keygen() (thanks to Greg Hill)
+
+        - Enabled use of default Key ID for signing
+
+        - Allow for GPG returning 8 or 16 bit KeyIDs (thanks to Roberto Jimenoca)
+
+        - Fixed tempfiles being left around after decrypt()
+
+        - Changed exit() to CORE::exit() (suggested by Jonathan R. Baker)
+
       Revision 1.61 2006/12/21 12:36:28 ashish
 
         - Skip tests if gpg not found.
@@ -353,7 +369,7 @@ CHANGELOG
          and trusted().
 
 AUTHOR
-    Crypt::GPG is Copyright (c) 2000-2005 Ashish Gulhati <crypt-gpg at
+    Crypt::GPG is Copyright (c) 2000-2007 Ashish Gulhati <crypt-gpg at
     neomailbox.com>. All Rights Reserved.
 
 ACKNOWLEDGEMENTS
