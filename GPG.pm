@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.62 2007/03/31 11:28:12 ashish Exp $
+# $Id: GPG.pm,v 1.63 2007/04/02 13:34:25 ashish Exp $
 
 package Crypt::GPG;
 
@@ -23,7 +23,7 @@ use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.62 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.63 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -68,7 +68,8 @@ sub sign {
   my $armor     = '-a' if $self->armor; 
   my @extras    = grep { $_ } ($detach, $armor);
 
-  my @secretkey = ('--default-key', ref($self->secretkey)?$self->secretkey->{ID}:$self->secretkey);
+  my @secretkey = ('--default-key', ref($self->secretkey)?$self->secretkey->{ID}:$self->secretkey)
+    if $self->secretkey;;
 
   my ($tmpfh, $tmpnam) = 
     tempfile( $self->tmpfiles, DIR => $self->tmpdir, 
@@ -280,7 +281,7 @@ sub encrypt {
   print $tmpfh $message; close $tmpfh;
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  push (@opts, '--default-key', ref($self->secretkey)?$self->secretkey->{ID}:$self->secretkey) if $sign;
+  push (@opts, '--default-key', ref($self->secretkey)?$self->secretkey->{ID}:$self->secretkey) if $sign and $self->secretkey;
   push (@opts, $sign) if $sign; push (@opts, $armor) if $armor;
   push (@opts, ('--comment', $self->comment)) if $self->comment;
 
@@ -682,7 +683,7 @@ sub certify {
     (@{$key->{UIDs}})[@uids];
 
   my @opts = (split (/\s+/, "$self->{FORCEDOPTS} $self->{GPGOPTS}"));
-  push (@opts, '--default-key', $self->secretkey);
+  push (@opts, '--default-key', $self->secretkey) if $self->secretkey;;
 
   my ($in, $out, $err, $in_q, $out_q, $err_q);
 
@@ -856,8 +857,8 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.62 $
- $Date: 2007/03/31 11:28:12 $
+ $Revision: 1.63 $
+ $Date: 2007/04/02 13:34:25 $
 
 =head1 SYNOPSIS
 
@@ -997,6 +998,11 @@ Version: string on the GnuPG output to whatever you like.
 
 Sets the B<COMMENT> instance variable which can be used to change the
 Comment: string on the GnuPG output to whatever you like.
+
+=item B<nofork($flag)>
+
+Sets the B<NOFORK> instance variable which if set to a true value will
+cause keygen() not to fork a separate process for key generation.
 
 =item B<debug($boolean)>
 
@@ -1196,6 +1202,10 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
+
+Revision 1.63  2007/04/02 13:34:25  ashish
+
+  - Fixed a bug introduced by the changes in 1.62 wrt default signing key
 
 Revision 1.62  2007/03/31 11:28:12  ashish
 

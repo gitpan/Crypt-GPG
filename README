@@ -2,8 +2,8 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.62 $
-     $Date: 2007/03/31 11:28:12 $
+     $Revision: 1.63 $
+     $Date: 2007/04/02 13:34:25 $
 
 SYNOPSIS
       use Crypt::GPG;
@@ -119,6 +119,10 @@ DATA METHODS
     comment($commentstring)
       Sets the COMMENT instance variable which can be used to change the
       Comment: string on the GnuPG output to whatever you like.
+
+    nofork($flag)
+      Sets the NOFORK instance variable which if set to a true value will
+      cause keygen() not to fork a separate process for key generation.
 
     debug($boolean)
       Sets the DEBUG instance variable which causes the raw output of
@@ -254,6 +258,10 @@ BUGS
 
 CHANGELOG
       $Log: GPG.pm,v $
+
+      Revision 1.63 2007/04/02 13:34:25 ashish
+
+        - Fixed a bug introduced by the changes in 1.62 wrt default signing key
 
       Revision 1.62 2007/03/31 11:28:12 ashish
 
