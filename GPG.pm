@@ -7,7 +7,7 @@
 # redistribute it and/or modify it under the same terms as Perl
 # itself.
 #
-# $Id: GPG.pm,v 1.63 2007/04/02 13:34:25 ashish Exp $
+# $Id: GPG.pm,v 1.64 2014/09/18 12:21:25 ashish Exp $
 
 package Crypt::GPG;
 
@@ -23,7 +23,7 @@ use IPC::Run qw( start pump finish timeout );
 use vars qw( $VERSION $AUTOLOAD );
 
 File::Temp->safe_level( File::Temp::STANDARD );
-( $VERSION ) = '$Revision: 1.63 $' =~ /\s+([\d\.]+)/;
+( $VERSION ) = '$Revision: 1.64 $' =~ /\s+([\d\.]+)/;
 
 sub new {
   bless { GPGBIN         =>   '/usr/local/bin/gpg',
@@ -857,7 +857,7 @@ Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 =head1 VERSION
 
- $Revision: 1.63 $
+ $Revision: 1.64 $
  $Date: 2007/04/02 13:34:25 $
 
 =head1 SYNOPSIS
@@ -1202,6 +1202,10 @@ Methods may break if you don't use ASCII armoring.
 =over 2
 
 $Log: GPG.pm,v $
+
+Revision 1.64  2014/09/18 12:21:25  ashish
+
+  - Applied Fix for RT 68339 (thanks to Todd Rinaldo)
 
 Revision 1.63  2007/04/02 13:34:25  ashish
 

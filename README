@@ -2,7 +2,7 @@ NAME
     Crypt::GPG - An Object Oriented Interface to GnuPG.
 
 VERSION
-     $Revision: 1.63 $
+     $Revision: 1.64 $
      $Date: 2007/04/02 13:34:25 $
 
 SYNOPSIS
@@ -258,6 +258,10 @@ BUGS
 
 CHANGELOG
       $Log: GPG.pm,v $
+
+      Revision 1.64 2014/09/18 12:21:25 ashish
+
+        - Applied Fix for RT 68339 (thanks to Todd Rinaldo)
 
       Revision 1.63 2007/04/02 13:34:25 ashish
 

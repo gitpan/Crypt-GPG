@@ -41,7 +41,7 @@ unless ($nogpg) {
 
 # Start test loop with different key sizes/types
 ################################################
-for my $bits qw(1024 2048) {
+for my $bits (qw(1024 2048)) {
   for my $type ('ELG-E') {
 
     my @mykeys; @mykeys = $gpg->keyinfo("A $bits $type") unless $nogpg;
